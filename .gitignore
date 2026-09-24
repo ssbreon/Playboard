@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Azure / Azurite
+__blobstorage__/
+__queuestorage__/
+__azurite_*
+AzuriteConfig
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+frontend/*.local
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
