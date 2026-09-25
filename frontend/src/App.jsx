@@ -21,6 +21,11 @@ const PLAY_GRID_COLUMNS = [
   { key: 'name', header: 'Name' },
   { key: 'createdAt', header: 'Created', render: formatDate },
   { key: 'updatedAt', header: 'Date Modified', render: formatDate },
+  {
+    key: 'theme',
+    header: 'Printer-friendly',
+    render: (value) => <input type="checkbox" checked={value === 'printerFriendly'} readOnly disabled />,
+  },
 ]
 
 function AppBar({ activeView, onNavigate }) {
@@ -98,6 +103,8 @@ function App() {
   const [playbookCount, setPlaybookCount] = useState(0)
   const [playbooksReloadToken, setPlaybooksReloadToken] = useState(0)
   const [gamePlansReloadToken, setGamePlansReloadToken] = useState(0)
+  const [playsReloadToken, setPlaysReloadToken] = useState(0)
+  const [scoutPlaysReloadToken, setScoutPlaysReloadToken] = useState(0)
 
   useEffect(() => {
     Promise.all([api.health(), api.listPlaybooks()])
@@ -122,11 +129,13 @@ function App() {
     setGamePlansReloadToken((t) => t + 1)
   }
 
-  async function handleCreatePlay(name, templateId) {
+  async function handleCreatePlay(name, templateId, theme) {
     const { target, parentId } = newDialog
     setNewDialog(null)
     const record =
-      target === 'play' ? await api.createPlay(parentId, { name, template: templateId }) : await api.createScoutPlay(parentId, { name, template: templateId })
+      target === 'play'
+        ? await api.createPlay(parentId, { name, template: templateId, theme })
+        : await api.createScoutPlay(parentId, { name, template: templateId, theme })
     const template = PLAY_TEMPLATES.find((t) => t.id === templateId) || PLAY_TEMPLATES[0]
     setDesigner({
       kind: target,
@@ -134,6 +143,7 @@ function App() {
       id: record.id,
       name: record.name,
       initialMarkers: buildMarkersFromTemplate(template),
+      initialTheme: record.theme,
     })
   }
 
@@ -144,8 +154,40 @@ function App() {
       parentId,
       id: row.id,
       name: row.name,
-      initialMarkers: buildMarkersFromTemplate(template),
+      initialMarkers: row.markers || buildMarkersFromTemplate(template),
+      initialDrawings: row.drawings,
+      initialTheme: row.theme,
     })
+  }
+
+  async function handleCopyPlay(kind, parentId, row) {
+    const payload = { name: `${row.name} (Copy)`, template: row.template, theme: row.theme, markers: row.markers, drawings: row.drawings }
+    if (kind === 'play') {
+      await api.createPlay(parentId, payload)
+      setPlaysReloadToken((t) => t + 1)
+    } else {
+      await api.createScoutPlay(parentId, payload)
+      setScoutPlaysReloadToken((t) => t + 1)
+    }
+  }
+
+  async function handleDeletePlay(kind, parentId, row) {
+    if (!window.confirm(`Delete "${row.name}"?`)) return
+    if (kind === 'play') {
+      await api.deletePlay(parentId, row.id)
+      setPlaysReloadToken((t) => t + 1)
+    } else {
+      await api.deleteScoutPlay(parentId, row.id)
+      setScoutPlaysReloadToken((t) => t + 1)
+    }
+  }
+
+  function playRowActions(kind, parentId) {
+    return (row) => [
+      { key: 'open', label: 'Open', onClick: (r) => openDesignerForRow(kind, parentId, r) },
+      { key: 'copy', label: 'Copy', onClick: (r) => handleCopyPlay(kind, parentId, r) },
+      { key: 'delete', label: 'Delete', destructive: true, onClick: (r) => handleDeletePlay(kind, parentId, r) },
+    ]
   }
 
   return (
@@ -174,7 +216,7 @@ function App() {
         />
       ) : parent?.kind === 'playbook' ? (
         <DataGrid
-          key={`plays-${parent.id}`}
+          key={`plays-${parent.id}-${playsReloadToken}`}
           title="Plays"
           columns={PLAY_GRID_COLUMNS}
           fetchRows={() => api.listPlays(parent.id).then((result) => result.items)}
@@ -182,10 +224,11 @@ function App() {
           newLabel="New Play"
           onBack={() => setParent(null)}
           onRowDoubleClick={(row) => openDesignerForRow('play', parent.id, row)}
+          rowActions={playRowActions('play', parent.id)}
         />
       ) : parent?.kind === 'gamePlan' ? (
         <DataGrid
-          key={`scoutPlays-${parent.id}`}
+          key={`scoutPlays-${parent.id}-${scoutPlaysReloadToken}`}
           title="Scout Plays"
           columns={PLAY_GRID_COLUMNS}
           fetchRows={() => api.listScoutPlays(parent.id).then((result) => result.items)}
@@ -193,6 +236,7 @@ function App() {
           newLabel="New Scout Play"
           onBack={() => setParent(null)}
           onRowDoubleClick={(row) => openDesignerForRow('scoutPlay', parent.id, row)}
+          rowActions={playRowActions('scoutPlay', parent.id)}
         />
       ) : (
         <>

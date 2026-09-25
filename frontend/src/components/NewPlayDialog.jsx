@@ -4,6 +4,7 @@ import { PLAY_TEMPLATES } from '../utils/formations'
 export function NewPlayDialog({ open, titleLabel, onCancel, onCreate }) {
   const [name, setName] = useState('')
   const [templateId, setTemplateId] = useState(PLAY_TEMPLATES[0].id)
+  const [printerFriendly, setPrinterFriendly] = useState(false)
 
   if (!open) return null
 
@@ -11,14 +12,16 @@ export function NewPlayDialog({ open, titleLabel, onCancel, onCreate }) {
     event.preventDefault()
     const trimmed = name.trim()
     if (!trimmed) return
-    onCreate(trimmed, templateId)
+    onCreate(trimmed, templateId, printerFriendly ? 'printerFriendly' : 'color')
     setName('')
     setTemplateId(PLAY_TEMPLATES[0].id)
+    setPrinterFriendly(false)
   }
 
   function handleCancel() {
     setName('')
     setTemplateId(PLAY_TEMPLATES[0].id)
+    setPrinterFriendly(false)
     onCancel()
   }
 
@@ -51,6 +54,14 @@ export function NewPlayDialog({ open, titleLabel, onCancel, onCreate }) {
             </label>
           ))}
         </fieldset>
+        <label className="dialog-field dialog-checkbox">
+          <input
+            type="checkbox"
+            checked={printerFriendly}
+            onChange={(event) => setPrinterFriendly(event.target.checked)}
+          />
+          <span>Printer-friendly (black &amp; white) theme</span>
+        </label>
         <div className="dialog-actions">
           <button type="button" className="dialog-cancel" onClick={handleCancel}>
             Cancel
