@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "provider": "azure-cosmos-nosql",
+  "description": "Versioned Cosmos DB schema for the Coaches Playboard API. No records are inserted.",
+  "database": "coaches-playboard",
+  "container": {
+    "id": "playboard",
+    "partitionKeyPath": "/partitionKey",
+    "entities": {
+      "playbooks": ["id", "name", "createdAt", "updatedAt"],
+      "plays": ["id", "parentId", "name", "template", "createdAt", "updatedAt"],
+      "slides": ["id", "parentId", "createdAt", "updatedAt"],
+      "exports": ["id", "status", "createdAt"],
+      "gamePlans": ["id", "name", "createdAt", "updatedAt"],
+      "scoutPlays": ["id", "parentId", "name", "template", "createdAt", "updatedAt"]
+    }
+  }
+}

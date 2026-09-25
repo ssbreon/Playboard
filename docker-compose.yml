@@ -1,0 +1,51 @@
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --skipApiVersionCheck
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    volumes:
+      - ./.azurite:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:10000/').then(() => process.exit(0)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  cosmosdb:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    ports:
+      - "8081:8081"
+      - "10250-10255:10250-10255"
+    environment:
+      AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE: "true"
+      AZURE_COSMOS_EMULATOR_PARTITION_COUNT: "10"
+      AZURE_COSMOS_EMULATOR_IP_ADDRESS: "0.0.0.0"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -k -sS https://127.0.0.1:8081/ >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    tty: true
+    stdin_open: true
+    mem_limit: 3g
+    restart: unless-stopped
+
+  db-migrate:
+    image: python:3.11-slim
+    working_dir: /app
+    depends_on:
+      cosmosdb:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
+    volumes:
+      - ./api:/app:ro
+    command: >
+      python -c "import pathlib; schema = pathlib.Path('/app/migrations/001-storage-schema.json'); print(f'Cosmos schema detected: {schema.exists()}')"
+    restart: "no"

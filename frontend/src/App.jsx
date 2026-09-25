@@ -1,14 +1,227 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { api } from './api'
+import { DataGrid } from './components/DataGrid'
+import { NewPlayDialog } from './components/NewPlayDialog'
+import { PlayDesigner } from './components/PlayDesigner'
+import { buildMarkersFromTemplate, PLAY_TEMPLATES } from './utils/formations'
+import { formatDate } from './utils/formatDate'
 import heroImg from './assets/hero.png'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import './App.css'
 
+const GRID_COLUMNS = [
+  { key: 'name', header: 'Name' },
+  { key: 'playCount', header: 'Plays' },
+  { key: 'createdAt', header: 'Created', render: formatDate },
+  { key: 'updatedAt', header: 'Date Modified', render: formatDate },
+]
+
+const PLAY_GRID_COLUMNS = [
+  { key: 'name', header: 'Name' },
+  { key: 'createdAt', header: 'Created', render: formatDate },
+  { key: 'updatedAt', header: 'Date Modified', render: formatDate },
+]
+
+function AppBar({ activeView, onNavigate }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  function navigate(event, view) {
+    event.preventDefault()
+    onNavigate(view)
+  }
+
+  return (
+    <header className="app-bar">
+      <div className="app-bar-brand">Coaches Playboard</div>
+      <nav className="app-bar-nav">
+        <a
+          href="#playbooks"
+          className={`app-bar-link${activeView === 'playbooks' ? ' active' : ''}`}
+          onClick={(event) => navigate(event, 'playbooks')}
+        >
+          Playbooks
+        </a>
+        <a
+          href="#game-plans"
+          className={`app-bar-link${activeView === 'gamePlans' ? ' active' : ''}`}
+          onClick={(event) => navigate(event, 'gamePlans')}
+        >
+          Game Plans
+        </a>
+      </nav>
+      <div className="app-bar-account" ref={menuRef}>
+        <button
+          type="button"
+          className="account-button"
+          aria-haspopup="true"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <svg className="account-icon" viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.24-8 5v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1c0-2.76-3.58-5-8-5Z"
+            />
+          </svg>
+        </button>
+        {menuOpen && (
+          <div className="account-menu" role="menu">
+            <a href="#profile" role="menuitem">Profile</a>
+            <a href="#settings" role="menuitem">Settings</a>
+            <a href="#sign-out" role="menuitem">Sign out</a>
+          </div>
+        )}
+      </div>
+    </header>
+  )
+}
+
 function App() {
+  const [view, setView] = useState('home')
+  const [parent, setParent] = useState(null)
+  const [designer, setDesigner] = useState(null)
+  const [newDialog, setNewDialog] = useState(null)
   const [count, setCount] = useState(0)
+  const [apiStatus, setApiStatus] = useState('Connecting to API...')
+  const [playbookCount, setPlaybookCount] = useState(0)
+  const [playbooksReloadToken, setPlaybooksReloadToken] = useState(0)
+  const [gamePlansReloadToken, setGamePlansReloadToken] = useState(0)
+
+  useEffect(() => {
+    Promise.all([api.health(), api.listPlaybooks()])
+      .then(([health, playbooks]) => {
+        setApiStatus(`${health.service}: ${health.status}`)
+        setPlaybookCount(playbooks.items.length)
+      })
+      .catch((error) => setApiStatus(`API unavailable: ${error.message}`))
+  }, [])
+
+  async function handleNewPlaybook() {
+    const name = window.prompt('Playbook name')
+    if (!name) return
+    await api.createPlaybook({ name })
+    setPlaybooksReloadToken((t) => t + 1)
+  }
+
+  async function handleNewGamePlan() {
+    const name = window.prompt('Game plan name')
+    if (!name) return
+    await api.createGamePlan({ name })
+    setGamePlansReloadToken((t) => t + 1)
+  }
+
+  async function handleCreatePlay(name, templateId) {
+    const { target, parentId } = newDialog
+    setNewDialog(null)
+    const record =
+      target === 'play' ? await api.createPlay(parentId, { name, template: templateId }) : await api.createScoutPlay(parentId, { name, template: templateId })
+    const template = PLAY_TEMPLATES.find((t) => t.id === templateId) || PLAY_TEMPLATES[0]
+    setDesigner({
+      kind: target,
+      parentId,
+      id: record.id,
+      name: record.name,
+      initialMarkers: buildMarkersFromTemplate(template),
+    })
+  }
+
+  function openDesignerForRow(kind, parentId, row) {
+    const template = PLAY_TEMPLATES.find((t) => t.id === row.template) || PLAY_TEMPLATES[0]
+    setDesigner({
+      kind,
+      parentId,
+      id: row.id,
+      name: row.name,
+      initialMarkers: buildMarkersFromTemplate(template),
+    })
+  }
 
   return (
     <>
+      <AppBar
+        activeView={view}
+        onNavigate={(nextView) => {
+          setDesigner(null)
+          setParent(null)
+          setView(nextView)
+        }}
+      />
+
+      <NewPlayDialog
+        open={newDialog !== null}
+        titleLabel={newDialog?.target === 'scoutPlay' ? 'New Scout Play' : 'New Play'}
+        onCancel={() => setNewDialog(null)}
+        onCreate={handleCreatePlay}
+      />
+
+      {designer ? (
+        <PlayDesigner
+          key={`${designer.kind}-${designer.id}`}
+          record={designer}
+          onClose={() => setDesigner(null)}
+        />
+      ) : parent?.kind === 'playbook' ? (
+        <DataGrid
+          key={`plays-${parent.id}`}
+          title="Plays"
+          columns={PLAY_GRID_COLUMNS}
+          fetchRows={() => api.listPlays(parent.id).then((result) => result.items)}
+          onNew={() => setNewDialog({ target: 'play', parentId: parent.id })}
+          newLabel="New Play"
+          onBack={() => setParent(null)}
+          onRowDoubleClick={(row) => openDesignerForRow('play', parent.id, row)}
+        />
+      ) : parent?.kind === 'gamePlan' ? (
+        <DataGrid
+          key={`scoutPlays-${parent.id}`}
+          title="Scout Plays"
+          columns={PLAY_GRID_COLUMNS}
+          fetchRows={() => api.listScoutPlays(parent.id).then((result) => result.items)}
+          onNew={() => setNewDialog({ target: 'scoutPlay', parentId: parent.id })}
+          newLabel="New Scout Play"
+          onBack={() => setParent(null)}
+          onRowDoubleClick={(row) => openDesignerForRow('scoutPlay', parent.id, row)}
+        />
+      ) : (
+        <>
+      {view === 'playbooks' && (
+        <DataGrid
+          key={`playbooks-${playbooksReloadToken}`}
+          title="Playbooks"
+          columns={GRID_COLUMNS}
+          fetchRows={() => api.listPlaybooks().then((result) => result.items)}
+          onNew={handleNewPlaybook}
+          newLabel="New Playbook"
+          onRowDoubleClick={(row) => setParent({ kind: 'playbook', id: row.id, name: row.name })}
+        />
+      )}
+
+      {view === 'gamePlans' && (
+        <DataGrid
+          key={`gamePlans-${gamePlansReloadToken}`}
+          title="Game Plans"
+          columns={GRID_COLUMNS}
+          fetchRows={() => api.listGamePlans().then((result) => result.items)}
+          onNew={handleNewGamePlan}
+          newLabel="New Game Plan"
+          onRowDoubleClick={(row) => setParent({ kind: 'gamePlan', id: row.id, name: row.name })}
+        />
+      )}
+
+      {view === 'home' && (
+        <>
       <section id="center">
         <div className="hero">
           <img src={heroImg} className="base" width="170" height="179" alt="" />
@@ -17,6 +230,7 @@ function App() {
         </div>
         <div>
           <h1>Get started</h1>
+          <p>{apiStatus} · {playbookCount} playbooks</p>
           <p>
             Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
           </p>
@@ -115,6 +329,10 @@ function App() {
 
       <div className="ticks"></div>
       <section id="spacer"></section>
+        </>
+      )}
+        </>
+      )}
     </>
   )
 }
