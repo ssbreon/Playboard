@@ -1,0 +1,1 @@
+& (Join-Path $PSScriptRoot "..\Invoke-Api.ps1") -Method Post -Path "/exports" -BodyPath (Join-Path $PSScriptRoot "sample-data.json")

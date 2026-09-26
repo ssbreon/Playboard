@@ -1,0 +1,2 @@
+if (-not $env:PLAYBOOK_ID -or -not $env:PLAY_ID) { throw "Set PLAYBOOK_ID and PLAY_ID to existing IDs." }
+& (Join-Path $PSScriptRoot "..\Invoke-Api.ps1") -Method Get -Path "/playbooks/$env:PLAYBOOK_ID/plays/$env:PLAY_ID"

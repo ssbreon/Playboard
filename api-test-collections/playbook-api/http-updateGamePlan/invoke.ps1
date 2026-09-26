@@ -1,0 +1,2 @@
+if (-not $env:GAME_PLAN_ID) { throw "Set GAME_PLAN_ID to an existing game plan ID." }
+& (Join-Path $PSScriptRoot "..\Invoke-Api.ps1") -Method Patch -Path "/game-plans/$env:GAME_PLAN_ID" -BodyPath (Join-Path $PSScriptRoot "sample-data.json")

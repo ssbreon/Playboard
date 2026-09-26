@@ -1,0 +1,1 @@
+& (Join-Path $PSScriptRoot "..\Invoke-Api.ps1") -Method Options -Path "/health"

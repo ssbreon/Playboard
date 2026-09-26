@@ -1,0 +1,1 @@
+& (Join-Path $PSScriptRoot "..\Invoke-Api.ps1") -Method Get -Path "/search"

@@ -1,0 +1,2 @@
+if (-not $env:GAME_PLAN_ID -or -not $env:SCOUT_PLAY_ID) { throw "Set GAME_PLAN_ID and SCOUT_PLAY_ID to existing IDs." }
+& (Join-Path $PSScriptRoot "..\Invoke-Api.ps1") -Method Delete -Path "/game-plans/$env:GAME_PLAN_ID/scout-plays/$env:SCOUT_PLAY_ID"

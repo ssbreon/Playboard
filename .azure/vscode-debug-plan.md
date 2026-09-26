@@ -3,10 +3,10 @@
 > This plan is the source of truth for generating the
 > VS Code debug setup in this workspace.
 >
-> **Status:** Executing
+> **Status:** Implemented
 > **Execution Mode:** Guided
 > **Created:** 2026-09-24T11:49:57-04:00
-> **Last Updated:** 2026-09-25T18:30:00-04:00
+> **Last Updated:** 2026-09-26T09:35:37-04:00
 >
 > <!-- Guided Mode (default) - hand-holds the user through review and approval before generating. -->
 
@@ -101,7 +101,7 @@ When selected, the generation phase produces lightweight, runnable API test scri
 
 | Generate | Service | Description |
 |----------|---------|-------------|
-| [x] | Playbook API | <details><summary>HTTP Endpoints (20)</summary><br>GET /api/health<br>GET /api/search<br>GET /api/playbooks<br>POST /api/playbooks<br>GET /api/playbooks/{playbookId}<br>PATCH /api/playbooks/{playbookId}<br>DELETE /api/playbooks/{playbookId}<br>GET /api/playbooks/{playbookId}/plays<br>POST /api/playbooks/{playbookId}/plays<br>GET /api/playbooks/{playbookId}/plays/{playId}<br>PATCH /api/playbooks/{playbookId}/plays/{playId}<br>DELETE /api/playbooks/{playbookId}/plays/{playId}<br>GET /api/playbooks/{playbookId}/slides<br>POST /api/playbooks/{playbookId}/slides<br>GET /api/playbooks/{playbookId}/slides/{slideId}<br>PATCH /api/playbooks/{playbookId}/slides/{slideId}<br>DELETE /api/playbooks/{playbookId}/slides/{slideId}<br>POST /api/exports<br>GET /api/exports/{id}<br>OPTIONS /api/{*path}<br><br></details><details><summary>Triggers (1)</summary><br>HTTP wildcard trigger: `{*path}`</details> |
+| [x] | Playbook API | <details><summary>HTTP Endpoints (30)</summary><br>GET /api/health<br>GET /api/search<br>GET /api/playbooks<br>POST /api/playbooks<br>GET /api/playbooks/{playbookId}<br>PATCH /api/playbooks/{playbookId}<br>DELETE /api/playbooks/{playbookId}<br>GET /api/playbooks/{playbookId}/plays<br>POST /api/playbooks/{playbookId}/plays<br>GET /api/playbooks/{playbookId}/plays/{playId}<br>PATCH /api/playbooks/{playbookId}/plays/{playId}<br>DELETE /api/playbooks/{playbookId}/plays/{playId}<br>GET /api/playbooks/{playbookId}/slides<br>POST /api/playbooks/{playbookId}/slides<br>GET /api/playbooks/{playbookId}/slides/{slideId}<br>PATCH /api/playbooks/{playbookId}/slides/{slideId}<br>DELETE /api/playbooks/{playbookId}/slides/{slideId}<br>POST /api/exports<br>GET /api/exports/{id}<br>GET /api/game-plans<br>POST /api/game-plans<br>GET /api/game-plans/{gamePlanId}<br>PATCH /api/game-plans/{gamePlanId}<br>DELETE /api/game-plans/{gamePlanId}<br>GET /api/game-plans/{gamePlanId}/scout-plays<br>POST /api/game-plans/{gamePlanId}/scout-plays<br>GET /api/game-plans/{gamePlanId}/scout-plays/{scoutPlayId}<br>PATCH /api/game-plans/{gamePlanId}/scout-plays/{scoutPlayId}<br>DELETE /api/game-plans/{gamePlanId}/scout-plays/{scoutPlayId}<br>OPTIONS /api/{*path}<br><br></details><details><summary>Triggers (1)</summary><br>HTTP wildcard trigger: `{*path}`</details> |
 
 ---
 
@@ -114,3 +114,12 @@ The existing frontend scripts are retained as the local development entry points
 | [x] | dev | ./frontend/package.json | Start the Vite frontend on the local development port with the configured `/api` proxy. |
 | [x] | build | ./frontend/package.json | Build the frontend production bundle. |
 | [x] | lint | ./frontend/package.json | Run the existing frontend lint check. |
+
+---
+
+## Debug Configuration Checklist
+
+Debug Configuration Checklist:
+✅ Playbook API (debug) — Functions worker initialized and wildcard `api` route registered; debugpy listened on port 5678; `GET /api/health` returned HTTP 200.
+✅ Playboard web app (debug) — Vite emitted its `Local:` ready signal at `http://localhost:5173`; `GET /` returned HTTP 200.
+✅ Debug All Services — Sequenced startup launched the API before Vite with one listener each on ports 7071, 5173, and 5678; both HTTP checks returned 200; all application, debugger, and emulator ports were free after teardown.
