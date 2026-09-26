@@ -4,29 +4,30 @@ export const PLAY_TEMPLATES = [
     id: '11v11',
     label: '11v11 (Pro Set vs 4-3)',
     offense: [
-      // Offensive line: LT, LG, C, RG, RT
-      { x: 30, y: 40 },
-      { x: 40, y: 40 },
-      { x: 50, y: 40 },
-      { x: 60, y: 40 },
-      { x: 70, y: 40 },
+      // Offensive line: LT, LG, C, RG, RT (rendered y = 85 - pos.y, so a smaller
+      // pos.y here means closer to the line of scrimmage)
+      { x: 36, y: 38 },
+      { x: 43, y: 38 },
+      { x: 50, y: 38 },
+      { x: 57, y: 38 },
+      { x: 64, y: 38 },
       // Tight end
-      { x: 78, y: 40 },
+      { x: 78, y: 38 },
       // Split end / flanker
       { x: 10, y: 38 },
       { x: 90, y: 38 },
       // Quarterback
-      { x: 50, y: 48 },
+      { x: 50, y: 46 },
       // Halfback / fullback (pro set split backs)
-      { x: 42, y: 55 },
-      { x: 58, y: 55 },
+      { x: 42, y: 53 },
+      { x: 58, y: 53 },
     ],
     defense: [
-      // Down linemen: DE, DT, DT, DE
-      { x: 35, y: 60 },
-      { x: 45, y: 60 },
-      { x: 55, y: 60 },
-      { x: 65, y: 60 },
+      // Down linemen: DE, DT, DT, DE (DE over LT/RT, DT over LG/RG; just below the line of scrimmage)
+      { x: 36, y: 53 },
+      { x: 43, y: 53 },
+      { x: 57, y: 53 },
+      { x: 64, y: 53 },
       // Linebackers: WLB, MLB, SLB
       { x: 40, y: 68 },
       { x: 50, y: 68 },

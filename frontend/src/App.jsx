@@ -5,6 +5,7 @@ import { NewPlayDialog } from './components/NewPlayDialog'
 import { PlayDesigner } from './components/PlayDesigner'
 import { buildMarkersFromTemplate, PLAY_TEMPLATES } from './utils/formations'
 import { formatDate } from './utils/formatDate'
+import { themeLabel } from './utils/themes'
 import heroImg from './assets/hero.png'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
@@ -19,13 +20,10 @@ const GRID_COLUMNS = [
 
 const PLAY_GRID_COLUMNS = [
   { key: 'name', header: 'Name' },
+  { key: 'category', header: 'Category' },
   { key: 'createdAt', header: 'Created', render: formatDate },
   { key: 'updatedAt', header: 'Date Modified', render: formatDate },
-  {
-    key: 'theme',
-    header: 'Printer-friendly',
-    render: (value) => <input type="checkbox" checked={value === 'printerFriendly'} readOnly disabled />,
-  },
+  { key: 'theme', header: 'Theme', render: (value) => themeLabel(value) },
 ]
 
 function AppBar({ activeView, onNavigate }) {
@@ -129,13 +127,13 @@ function App() {
     setGamePlansReloadToken((t) => t + 1)
   }
 
-  async function handleCreatePlay(name, templateId, theme) {
+  async function handleCreatePlay(name, templateId, theme, category, fieldDecoration, fieldOrientation) {
     const { target, parentId } = newDialog
     setNewDialog(null)
     const record =
       target === 'play'
-        ? await api.createPlay(parentId, { name, template: templateId, theme })
-        : await api.createScoutPlay(parentId, { name, template: templateId, theme })
+        ? await api.createPlay(parentId, { name, template: templateId, theme, category, fieldDecoration, fieldOrientation })
+        : await api.createScoutPlay(parentId, { name, template: templateId, theme, category, fieldDecoration, fieldOrientation })
     const template = PLAY_TEMPLATES.find((t) => t.id === templateId) || PLAY_TEMPLATES[0]
     setDesigner({
       kind: target,
@@ -143,7 +141,12 @@ function App() {
       id: record.id,
       name: record.name,
       initialMarkers: buildMarkersFromTemplate(template),
+      initialTextAnnotations: record.textAnnotations,
       initialTheme: record.theme,
+      template: record.template,
+      category: record.category,
+      fieldDecoration: record.fieldDecoration,
+      fieldOrientation: record.fieldOrientation,
     })
   }
 
@@ -156,12 +159,27 @@ function App() {
       name: row.name,
       initialMarkers: row.markers || buildMarkersFromTemplate(template),
       initialDrawings: row.drawings,
+      initialTextAnnotations: row.textAnnotations,
       initialTheme: row.theme,
+      template: row.template,
+      category: row.category,
+      fieldDecoration: row.fieldDecoration,
+      fieldOrientation: row.fieldOrientation,
     })
   }
 
   async function handleCopyPlay(kind, parentId, row) {
-    const payload = { name: `${row.name} (Copy)`, template: row.template, theme: row.theme, markers: row.markers, drawings: row.drawings }
+    const payload = {
+      name: `${row.name} (Copy)`,
+      template: row.template,
+      theme: row.theme,
+      category: row.category,
+      fieldDecoration: row.fieldDecoration,
+      fieldOrientation: row.fieldOrientation,
+      markers: row.markers,
+      drawings: row.drawings,
+      textAnnotations: row.textAnnotations,
+    }
     if (kind === 'play') {
       await api.createPlay(parentId, payload)
       setPlaysReloadToken((t) => t + 1)

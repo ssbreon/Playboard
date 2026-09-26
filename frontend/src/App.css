@@ -17,6 +17,7 @@
   gap: 16px;
   flex-grow: 1;
   padding: 20px 32px 32px;
+  background: whitesmoke;
 
   @media (max-width: 1024px) {
     padding: 16px 20px 24px;
@@ -164,6 +165,43 @@
       border-top-color: rgba(0, 0, 0, 0.65);
     }
   }
+
+  &.blackboard {
+    background: repeating-linear-gradient(
+      to bottom,
+      #171717 0,
+      #171717 12.5%,
+      #222 12.5%,
+      #222 25%
+    );
+
+    &::before {
+      border-top-color: rgba(255, 255, 255, 0.85);
+    }
+  }
+}
+
+.play-designer-hash-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.play-designer-hash-mark {
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.play-designer-field.printer-friendly .play-designer-hash-mark {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.play-designer-field.blackboard .play-designer-hash-mark {
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .play-designer-toolbar {
@@ -251,7 +289,8 @@
   }
 
   &.printer-friendly.offense {
-    background: #000;
+    background: #fff;
+    color: #000;
     border-color: #000;
   }
 
@@ -259,6 +298,13 @@
     background: #fff;
     color: #000;
     border-color: #000;
+  }
+
+  &.blackboard.offense,
+  &.blackboard.defense {
+    background: #fff;
+    color: #000;
+    border-color: #fff;
   }
 
   &.selected {
@@ -281,6 +327,57 @@
 
   &.anchorable:active {
     cursor: crosshair;
+  }
+}
+
+.play-designer-text-annotation {
+  position: absolute;
+  z-index: 4;
+  min-height: 30px;
+  transform: translate(-50%, -50%);
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  cursor: move;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  &:focus {
+    outline: 2px solid rgba(255, 200, 0, 0.9);
+    outline-offset: 1px;
+    border: 1px dashed rgba(255, 255, 255, 0.9);
+    background: rgba(0, 0, 0, 0.35);
+  }
+}
+
+.play-designer-field.printer-friendly .play-designer-text-annotation {
+  color: #000;
+
+  &::placeholder {
+    color: rgba(0, 0, 0, 0.6);
+  }
+
+  &:focus {
+    border: 1px dashed #000;
+    background: rgba(255, 255, 255, 0.85);
+  }
+}
+
+.play-designer-field.blackboard .play-designer-text-annotation {
+  color: #fff;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  &:focus {
+    border: 1px dashed #fff;
+    background: rgba(255, 255, 255, 0.12);
   }
 }
 
@@ -681,6 +778,7 @@
   padding: 32px;
   text-align: left;
   flex-grow: 1;
+  background: whitesmoke;
 
   @media (max-width: 1024px) {
     padding: 20px;
@@ -846,11 +944,15 @@
     font-family: var(--heading);
     font-weight: 600;
     color: var(--text-h);
-    background: var(--code-bg);
+    background: #e4e6e9;
   }
 
   tbody tr:last-child td {
     border-bottom: none;
+  }
+
+  tbody tr {
+    background: #fff;
   }
 
   tbody tr:hover {
