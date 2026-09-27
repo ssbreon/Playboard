@@ -22,10 +22,15 @@ const GRID_COLUMNS = [
 ]
 
 const PLAYBOOK_GRID_COLUMNS = [GRID_COLUMNS[0], { key: 'year', header: 'Year' }, ...GRID_COLUMNS.slice(1)]
+function formatGameDate(value) {
+  return value ? new Date(`${value}T00:00:00`).toLocaleDateString() : '—'
+}
+
 const GAME_PLAN_GRID_COLUMNS = [
   GRID_COLUMNS[0],
   { key: 'year', header: 'Year' },
   { key: 'opponent', header: 'Opponent' },
+  { key: 'gameDate', header: 'Game Date', render: formatGameDate },
   ...GRID_COLUMNS.slice(1),
 ]
 
@@ -111,14 +116,17 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
   const [savedYear, setSavedYear] = useState(String(parentRecord.year || new Date().getFullYear()))
   const [opponent, setOpponent] = useState(parentRecord.opponent || '')
   const [savedOpponent, setSavedOpponent] = useState(parentRecord.opponent || '')
+  const [gameDate, setGameDate] = useState(parentRecord.gameDate || '')
+  const [savedGameDate, setSavedGameDate] = useState(parentRecord.gameDate || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [draftCategory, setDraftCategory] = useState(category)
   const [draftYear, setDraftYear] = useState(year)
   const [draftOpponent, setDraftOpponent] = useState(opponent)
+  const [draftGameDate, setDraftGameDate] = useState(gameDate)
   const trimmedName = name.trim()
-  const metadataIsDirty = category !== savedCategory || year !== savedYear || (parentRecord.kind === 'gamePlan' && opponent !== savedOpponent)
+  const metadataIsDirty = category !== savedCategory || year !== savedYear || (parentRecord.kind === 'gamePlan' && (opponent !== savedOpponent || gameDate !== savedGameDate))
   const isDirty = name !== savedName || metadataIsDirty
 
   async function handleSave() {
@@ -130,7 +138,10 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
       if (metadataIsDirty) {
         payload.category = category
         payload.year = Number(year)
-        if (parentRecord.kind === 'gamePlan') payload.opponent = opponent
+        if (parentRecord.kind === 'gamePlan') {
+          payload.opponent = opponent
+          payload.gameDate = gameDate
+        }
       }
       const updated = await updateParent(parentRecord.id, payload)
       setName(updated.name)
@@ -141,6 +152,9 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
       if (parentRecord.kind === 'gamePlan') {
         setSavedOpponent(opponent)
         setOpponent(opponent)
+        const updatedGameDate = updated.gameDate ?? gameDate
+        setSavedGameDate(updatedGameDate)
+        setGameDate(updatedGameDate)
       }
       onParentUpdated(updated)
     } catch (err) {
@@ -155,6 +169,7 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
     setCategory(savedCategory)
     setYear(savedYear)
     setOpponent(savedOpponent)
+    setGameDate(savedGameDate)
     setError(null)
   }
 
@@ -162,6 +177,7 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
     setDraftCategory(category)
     setDraftYear(year)
     setDraftOpponent(opponent)
+    setDraftGameDate(gameDate)
     setSettingsOpen(true)
   }
 
@@ -169,7 +185,10 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
     event.preventDefault()
     setCategory(draftCategory)
     setYear(draftYear)
-    if (parentRecord.kind === 'gamePlan') setOpponent(draftOpponent.trim())
+    if (parentRecord.kind === 'gamePlan') {
+      setOpponent(draftOpponent.trim())
+      setGameDate(draftGameDate)
+    }
     setError(null)
     setSettingsOpen(false)
   }
@@ -226,10 +245,16 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
               />
             </label>
             {parentRecord.kind === 'gamePlan' && (
-              <label className="dialog-field">
-                <span>Opponent</span>
-                <input type="text" value={draftOpponent} onChange={(event) => setDraftOpponent(event.target.value)} />
-              </label>
+              <>
+                <label className="dialog-field">
+                  <span>Opponent</span>
+                  <input type="text" value={draftOpponent} onChange={(event) => setDraftOpponent(event.target.value)} />
+                </label>
+                <label className="dialog-field">
+                  <span>Game Date</span>
+                  <input type="date" value={draftGameDate} onChange={(event) => setDraftGameDate(event.target.value)} />
+                </label>
+              </>
             )}
             <div className="dialog-actions">
               <button type="button" className="dialog-cancel" onClick={() => setSettingsOpen(false)}>
@@ -297,7 +322,7 @@ function App() {
       name: `${row.name} (Copy)`,
       category: row.category,
       year: row.year,
-      ...(kind === 'gamePlan' && { opponent: row.opponent }),
+      ...(kind === 'gamePlan' && { opponent: row.opponent, gameDate: row.gameDate }),
     }
     if (kind === 'playbook') {
       await api.createPlaybook(payload)

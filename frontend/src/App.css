@@ -338,10 +338,15 @@
   }
 
   &.selected {
-    filter: drop-shadow(0 0 2px rgba(255, 200, 0, 0.9));
+    filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.95));
   }
 }
 
+.play-designer-block-cap.anchor-hover {
+  stroke: #ef4444;
+  stroke-width: 5;
+  filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.95));
+}
 
 .play-designer-marker {
   position: absolute;

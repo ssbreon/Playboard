@@ -5,7 +5,7 @@ import { PLAY_TEMPLATES, buildMarkersFromTemplate } from '../utils/formations'
 import { PLAY_THEMES, getTheme, normalizeThemeId } from '../utils/themes'
 
 // Fixed on-screen size (px) for the block tool's perpendicular endcap, independent of field scaling.
-const TBAR_LENGTH_PX = 10
+const TBAR_LENGTH_PX = 12
 const TBAR_THICKNESS_PX = 3
 
 // Fixed on-screen size (px) for route/blitz/coverage arrowheads, independent of field scaling.
@@ -83,12 +83,14 @@ export function PlayDesigner({ record, onClose }) {
   const [selectedId, setSelectedId] = useState(null)
   const [selectedDrawing, setSelectedDrawing] = useState(null)
   const [selectedTextId, setSelectedTextId] = useState(null)
+  const [hoveredBlockCapId, setHoveredBlockCapId] = useState(null)
   const [dragId, setDragId] = useState(null)
   const [dragTextId, setDragTextId] = useState(null)
   const [dragTextOffset, setDragTextOffset] = useState(null)
   const [activeTool, setActiveTool] = useState('select')
   const [activeChain, setActiveChain] = useState(null)
   const [cursorPos, setCursorPos] = useState(null)
+  const [drawHistory, setDrawHistory] = useState([])
     const [editingTextId, setEditingTextId] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -153,6 +155,9 @@ export function PlayDesigner({ record, onClose }) {
     fieldOrientation !== savedFieldOrientation ||
     theme !== savedTheme
 
+  const canUndoDrawing =
+    isDirty && drawHistory.some((entry) => (drawings[entry.type] || []).some((drawing) => drawing.id === entry.id))
+
   async function handleSave() {
     setSaving(true)
     setError(null)
@@ -205,7 +210,25 @@ export function PlayDesigner({ record, onClose }) {
     setEditingTextId(null)
     setActiveChain(null)
     setCursorPos(null)
+    setDrawHistory([])
     setError(null)
+  }
+
+  function undoLastDrawing() {
+    const history = [...drawHistory]
+    while (history.length > 0) {
+      const last = history.pop()
+      if ((drawings[last.type] || []).some((drawing) => drawing.id === last.id)) {
+        setDrawings((current) => ({
+          ...current,
+          [last.type]: current[last.type].filter((drawing) => drawing.id !== last.id),
+          ...(last.type === 'block' && { dtb: current.dtb.filter((drawing) => drawing.blockId !== last.id) }),
+        }))
+        setSelectedDrawing(null)
+        break
+      }
+    }
+    setDrawHistory(history)
   }
 
   function openSettings() {
@@ -235,6 +258,7 @@ export function PlayDesigner({ record, onClose }) {
       setSelectedDrawing(null)
       setActiveChain(null)
       setCursorPos(null)
+      setDrawHistory([])
     }
     setSettingsOpen(false)
   }
@@ -279,6 +303,7 @@ export function PlayDesigner({ record, onClose }) {
     setEditingTextId(null)
     setActiveChain(null)
     setCursorPos(null)
+    setDrawHistory([])
   }
 
   function positionFromEvent(event) {
@@ -398,6 +423,7 @@ export function PlayDesigner({ record, onClose }) {
         ? { id: crypto.randomUUID(), blockId: activeChain.blockId, points }
         : { id: crypto.randomUUID(), anchorId: activeChain.anchorId, points }
       setDrawings((current) => ({ ...current, [activeChain.type]: [...current[activeChain.type], newDrawing] }))
+      setDrawHistory((current) => [...current, { type: activeChain.type, id: newDrawing.id }])
     }
     setActiveChain(null)
     setCursorPos(null)
@@ -657,6 +683,18 @@ export function PlayDesigner({ record, onClose }) {
           </svg>
           <span>Add Text</span>
         </button>
+        <button
+          type="button"
+          className="play-designer-tool"
+          onClick={undoLastDrawing}
+          disabled={!canUndoDrawing}
+          title="Undo Last"
+        >
+          <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+            <path fill="currentColor" d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z" />
+          </svg>
+          <span>Undo Last</span>
+        </button>
         <div className="toolbar-menu" ref={menuRef}>
           <button
             type="button"
@@ -757,6 +795,7 @@ export function PlayDesigner({ record, onClose }) {
               ...drawing.points.map((p) => ({ x: anchor.x + p.dx, y: anchor.y + p.dy })),
             ]
             const isSelected = selectedDrawing?.type === drawing.type && selectedDrawing?.id === drawing.id
+            const color = isSelected ? '#ef4444' : toolColor(tool)
             const cap = tool.endCap === 'tbar' ? tbarCapPoints(points) : null
             const arrow = tool.arrow ? arrowCapPoints(points) : null
             return (
@@ -764,7 +803,7 @@ export function PlayDesigner({ record, onClose }) {
                 <path
                   className={`play-designer-route${isSelected ? ' selected' : ''}`}
                   d={pathData(tool.id === 'blitz' ? points.slice(0, 2) : points)}
-                  stroke={toolColor(tool)}
+                  stroke={color}
                   strokeDasharray={tool.id === 'blitz' ? BLITZ_FIRST_SEGMENT_DASH : toolDash(tool) || undefined}
                   strokeLinecap={tool.id === 'dtb' ? 'round' : undefined}
                   onClick={(event) => handleDrawingClick(event, drawing.type, drawing.id)}
@@ -773,18 +812,19 @@ export function PlayDesigner({ record, onClose }) {
                   <path
                     className={`play-designer-route${isSelected ? ' selected' : ''}`}
                     d={pathData(points.slice(1))}
-                    stroke={toolColor(tool)}
+                    stroke={color}
                     onClick={(event) => handleDrawingClick(event, drawing.type, drawing.id)}
                   />
                 )}
                 {cap && (
                   <>
                     <line
+                      className={`play-designer-block-cap${drawing.type === 'block' && hoveredBlockCapId === drawing.id && activeTool === 'dtb' && !activeChain ? ' anchor-hover' : ''}`}
                       x1={cap.x1}
                       y1={cap.y1}
                       x2={cap.x2}
                       y2={cap.y2}
-                      stroke={toolColor(tool)}
+                      stroke={color}
                       strokeWidth={TBAR_THICKNESS_PX}
                       vectorEffect="non-scaling-stroke"
                       onClick={(event) => handleDrawingClick(event, drawing.type, drawing.id)}
@@ -799,6 +839,10 @@ export function PlayDesigner({ record, onClose }) {
                         strokeWidth={16}
                         vectorEffect="non-scaling-stroke"
                         pointerEvents="stroke"
+                        onPointerEnter={() => {
+                          if (activeTool === 'dtb' && !activeChain) setHoveredBlockCapId(drawing.id)
+                        }}
+                        onPointerLeave={() => setHoveredBlockCapId(null)}
                         onClick={(event) => handleBlockCapClick(event, drawing)}
                       />
                     )}
@@ -807,7 +851,7 @@ export function PlayDesigner({ record, onClose }) {
                 {arrow && (
                   <polygon
                     points={arrow}
-                    fill={toolColor(tool)}
+                    fill={color}
                     onClick={(event) => handleDrawingClick(event, drawing.type, drawing.id)}
                   />
                 )}
