@@ -6,7 +6,7 @@ export const PLAY_CATEGORIES = ['Front', 'Stunt', 'Blitz', 'Coverage', 'Play Cal
 export const FIELD_DECORATIONS = ['None', 'Hash Marks', 'Hash Marks and Numbers']
 export const FIELD_ORIENTATIONS = ['High School', 'NCAA', 'NFL']
 
-export function NewPlayDialog({ open, titleLabel, onCancel, onCreate }) {
+export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel, onCreate }) {
   const [name, setName] = useState('')
   const [templateId, setTemplateId] = useState(PLAY_TEMPLATES[0].id)
   const [category, setCategory] = useState(PLAY_CATEGORIES[0])
@@ -42,7 +42,7 @@ export function NewPlayDialog({ open, titleLabel, onCancel, onCreate }) {
   return (
     <div className="dialog-overlay" onClick={handleCancel}>
       <form className="dialog-panel" onClick={(event) => event.stopPropagation()} onSubmit={handleSubmit}>
-        <h2>{titleLabel}</h2>
+        <h2>{TitleIcon && <TitleIcon size={26} strokeWidth={1.8} aria-hidden="true" />}{titleLabel}</h2>
         <label className="dialog-field">
           <span>Name</span>
           <input

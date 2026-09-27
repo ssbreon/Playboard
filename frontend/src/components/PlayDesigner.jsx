@@ -10,7 +10,8 @@ const TBAR_THICKNESS_PX = 3
 
 // Fixed on-screen size (px) for route/blitz/coverage arrowheads, independent of field scaling.
 const ARROW_LENGTH_PX = 9
-const ARROW_WIDTH_PX = 8
+const ARROW_WIDTH_PX = 11
+const BLITZ_FIRST_SEGMENT_DASH = '6 4'
 
 const FIELD_WIDTH_FEET = 160
 const SIDELINE_HASH_MARK_PERCENT = 1.5
@@ -26,6 +27,7 @@ const HASH_MARK_Y_POSITIONS = Array.from({ length: 8 }, (_, band) =>
 const DRAWING_TOOLS = [
   { id: 'select', label: 'Select' },
   { id: 'block', label: 'Block', color: '#f59e0b', dash: null, arrow: false, endCap: 'tbar' },
+  { id: 'dtb', label: 'DTB', color: '#f59e0b', dash: '2 4', arrow: false, endCap: 'tbar' },
   { id: 'route', label: 'Route', color: '#1d4ed8', dash: null, arrow: true },
   { id: 'blitz', label: 'Blitz', color: '#b91c1c', dash: null, arrow: true },
   { id: 'coverage', label: 'Coverage', color: '#7c3aed', dash: '2 4', arrow: true },
@@ -34,12 +36,13 @@ const DRAWING_TOOLS = [
 const TOOL_ICONS = {
   select: <path fill="currentColor" d="M6 3v18l4.6-4.6L13.2 21l2.6-1.4-2.6-4.6L18 13.4z" />,
   block: <path stroke="currentColor" strokeWidth="2" fill="none" d="M4 20 20 4M4 12h16M12 4v16" />,
+  dtb: <path stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="2 3" fill="none" d="M4 20 20 4M4 12h16M12 4v16" />,
   route: <path stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" d="M4 20 12 8 20 20M12 8V3" />,
   blitz: <path stroke="currentColor" strokeWidth="2" fill="none" strokeDasharray="4 3" strokeLinecap="round" d="M4 20 20 4" />,
   coverage: <path stroke="currentColor" strokeWidth="2" fill="none" strokeDasharray="1 4" strokeLinecap="round" d="M4 12h16" />,
 }
 
-const EMPTY_DRAWINGS = { block: [], route: [], blitz: [], coverage: [] }
+const EMPTY_DRAWINGS = { block: [], dtb: [], route: [], blitz: [], coverage: [] }
 
 function normalizeDrawings(source) {
   return { ...EMPTY_DRAWINGS, ...(source || {}) }
@@ -288,7 +291,7 @@ export function PlayDesigner({ record, onClose }) {
 
   function addTextAnnotation() {
     const id = crypto.randomUUID()
-    setTextAnnotations((current) => [...current, { id, text: '', x: 50, y: 50 }])
+    setTextAnnotations((current) => [...current, { id, text: '', x: 50, y: 5 }])
     setEditingTextId(id)
     setSelectedTextId(id)
     setActiveTool('select')
@@ -321,6 +324,16 @@ export function PlayDesigner({ record, onClose }) {
     return Math.max(134, Math.ceil(context.measureText(text || 'Enter text').width))
   }
 
+  function drawingAnchor(drawing) {
+    if (drawing.blockId) {
+      const block = drawings.block.find((item) => item.id === drawing.blockId)
+      const player = block && markers.find((marker) => marker.id === block.anchorId)
+      const end = block?.points.at(-1)
+      return player && end ? { x: player.x + end.dx, y: player.y + end.dy } : null
+    }
+    return markers.find((marker) => marker.id === drawing.anchorId)
+  }
+
   function handleMarkerPointerDown(event, id) {
     if (activeTool !== 'select') return
     event.stopPropagation()
@@ -332,7 +345,7 @@ export function PlayDesigner({ record, onClose }) {
 
   function handleMarkerClick(event, id) {
     event.stopPropagation()
-    if (activeTool === 'select' || activeChain) return
+    if (activeTool === 'select' || activeTool === 'dtb' || activeChain) return
     setActiveChain({ type: activeTool, anchorId: id, points: [] })
     setSelectedDrawing(null)
     setCursorPos(null)
@@ -346,6 +359,17 @@ export function PlayDesigner({ record, onClose }) {
     setSelectedTextId(null)
   }
 
+  function handleBlockCapClick(event, drawing) {
+    if (activeTool !== 'dtb' || activeChain) {
+      handleDrawingClick(event, 'block', drawing.id)
+      return
+    }
+    event.stopPropagation()
+    setActiveChain({ type: 'dtb', blockId: drawing.id, points: [] })
+    setSelectedDrawing(null)
+    setCursorPos(null)
+  }
+
   function handleFieldClick(event) {
     if (activeTool === 'select') {
       // Marker/drawing clicks stop propagation, so reaching here means empty field was clicked.
@@ -355,7 +379,7 @@ export function PlayDesigner({ record, onClose }) {
       return
     }
     if (!activeChain) return
-    const anchor = markers.find((marker) => marker.id === activeChain.anchorId)
+    const anchor = drawingAnchor(activeChain)
     if (!anchor) {
       setActiveChain(null)
       return
@@ -370,7 +394,9 @@ export function PlayDesigner({ record, onClose }) {
     if (activeTool === 'select' || !activeChain) return
     const points = activeChain.points.length > 0 ? activeChain.points.slice(0, -1) : activeChain.points
     if (points.length > 0) {
-      const newDrawing = { id: crypto.randomUUID(), anchorId: activeChain.anchorId, points }
+      const newDrawing = activeChain.type === 'dtb'
+        ? { id: crypto.randomUUID(), blockId: activeChain.blockId, points }
+        : { id: crypto.randomUUID(), anchorId: activeChain.anchorId, points }
       setDrawings((current) => ({ ...current, [activeChain.type]: [...current[activeChain.type], newDrawing] }))
     }
     setActiveChain(null)
@@ -415,8 +441,9 @@ export function PlayDesigner({ record, onClose }) {
       setMarkers((current) => current.filter((marker) => marker.id !== selectedId))
       setDrawings((current) => {
         const next = {}
+        const removedBlocks = current.block.filter((drawing) => drawing.anchorId === selectedId).map((drawing) => drawing.id)
         for (const type of Object.keys(current)) {
-          next[type] = current[type].filter((drawing) => drawing.anchorId !== selectedId)
+          next[type] = current[type].filter((drawing) => drawing.anchorId !== selectedId && !removedBlocks.includes(drawing.blockId))
         }
         return next
       })
@@ -425,6 +452,9 @@ export function PlayDesigner({ record, onClose }) {
       setDrawings((current) => ({
         ...current,
         [selectedDrawing.type]: current[selectedDrawing.type].filter((drawing) => drawing.id !== selectedDrawing.id),
+        ...(selectedDrawing.type === 'block' && {
+          dtb: current.dtb.filter((drawing) => drawing.blockId !== selectedDrawing.id),
+        }),
       }))
       setSelectedDrawing(null)
     } else if (selectedTextId) {
@@ -492,12 +522,34 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function toolDash(tool) {
-    return activeTheme.toolDash ? activeTheme.toolDash[tool.id] : tool.dash
+    return activeTheme.toolDash && tool.id in activeTheme.toolDash ? activeTheme.toolDash[tool.id] : tool.dash
   }
 
   const allDrawings = Object.entries(drawings).flatMap(([type, list]) => list.map((drawing) => ({ ...drawing, type })))
-  const chainAnchor = activeChain ? markers.find((marker) => marker.id === activeChain.anchorId) : null
+  const chainAnchor = activeChain ? drawingAnchor(activeChain) : null
   const isEmpty = markers.length === 0 && allDrawings.length === 0 && textAnnotations.length === 0
+
+  function toolButton(tool) {
+    return (
+      <button
+        key={tool.id}
+        type="button"
+        className={`play-designer-tool${tool.id === 'select' ? ' select-tool' : ''}${tool.id === activeTool ? ' active' : ''}`}
+        onClick={() => {
+          setActiveTool(tool.id)
+          setActiveChain(null)
+          setCursorPos(null)
+        }}
+        aria-pressed={tool.id === activeTool}
+        title={tool.id === 'dtb' ? 'Double-team To Backer' : tool.label}
+      >
+        <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+          {TOOL_ICONS[tool.id]}
+        </svg>
+        <span>{tool.label}</span>
+      </button>
+    )
+  }
 
   return (
     <section className="play-designer">
@@ -595,26 +647,10 @@ export function PlayDesigner({ record, onClose }) {
         </div>
       )}
       <div className="play-designer-toolbar" role="toolbar" aria-label="Drawing tools">
-        {DRAWING_TOOLS.map((tool) => (
-          <button
-            key={tool.id}
-            type="button"
-            className={`play-designer-tool${tool.id === activeTool ? ' active' : ''}`}
-            style={tool.color ? { color: toolColor(tool) } : undefined}
-            onClick={() => {
-              setActiveTool(tool.id)
-              setActiveChain(null)
-              setCursorPos(null)
-            }}
-            aria-pressed={tool.id === activeTool}
-            title={tool.label}
-          >
-            <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-              {TOOL_ICONS[tool.id]}
-            </svg>
-            <span>{tool.label}</span>
-          </button>
-        ))}
+        {toolButton(DRAWING_TOOLS[0])}
+        <div className="play-designer-drawing-tools" role="group" aria-label="Path tools">
+          {DRAWING_TOOLS.slice(1).map(toolButton)}
+        </div>
         <button type="button" className="play-designer-tool" onClick={addTextAnnotation} title="Add Text">
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
             <path fill="currentColor" d="M5 4h14v2h-6v14h-2V6H5z" />
@@ -713,7 +749,7 @@ export function PlayDesigner({ record, onClose }) {
         ))}
         <svg className="play-designer-routes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
           {allDrawings.map((drawing) => {
-            const anchor = markers.find((marker) => marker.id === drawing.anchorId)
+            const anchor = drawingAnchor(drawing)
             if (!anchor) return null
             const tool = DRAWING_TOOLS.find((t) => t.id === drawing.type)
             const points = [
@@ -727,22 +763,46 @@ export function PlayDesigner({ record, onClose }) {
               <g key={drawing.id}>
                 <path
                   className={`play-designer-route${isSelected ? ' selected' : ''}`}
-                  d={pathData(points)}
+                  d={pathData(tool.id === 'blitz' ? points.slice(0, 2) : points)}
                   stroke={toolColor(tool)}
-                  strokeDasharray={toolDash(tool) || undefined}
+                  strokeDasharray={tool.id === 'blitz' ? BLITZ_FIRST_SEGMENT_DASH : toolDash(tool) || undefined}
+                  strokeLinecap={tool.id === 'dtb' ? 'round' : undefined}
                   onClick={(event) => handleDrawingClick(event, drawing.type, drawing.id)}
                 />
-                {cap && (
-                  <line
-                    x1={cap.x1}
-                    y1={cap.y1}
-                    x2={cap.x2}
-                    y2={cap.y2}
+                {tool.id === 'blitz' && points.length > 2 && (
+                  <path
+                    className={`play-designer-route${isSelected ? ' selected' : ''}`}
+                    d={pathData(points.slice(1))}
                     stroke={toolColor(tool)}
-                    strokeWidth={TBAR_THICKNESS_PX}
-                    vectorEffect="non-scaling-stroke"
                     onClick={(event) => handleDrawingClick(event, drawing.type, drawing.id)}
                   />
+                )}
+                {cap && (
+                  <>
+                    <line
+                      x1={cap.x1}
+                      y1={cap.y1}
+                      x2={cap.x2}
+                      y2={cap.y2}
+                      stroke={toolColor(tool)}
+                      strokeWidth={TBAR_THICKNESS_PX}
+                      vectorEffect="non-scaling-stroke"
+                      onClick={(event) => handleDrawingClick(event, drawing.type, drawing.id)}
+                    />
+                    {drawing.type === 'block' && (
+                      <line
+                        x1={cap.x1}
+                        y1={cap.y1}
+                        x2={cap.x2}
+                        y2={cap.y2}
+                        stroke="transparent"
+                        strokeWidth={16}
+                        vectorEffect="non-scaling-stroke"
+                        pointerEvents="stroke"
+                        onClick={(event) => handleBlockCapClick(event, drawing)}
+                      />
+                    )}
+                  </>
                 )}
                 {arrow && (
                   <polygon
@@ -766,11 +826,19 @@ export function PlayDesigner({ record, onClose }) {
             return (
               <g>
                 <path
-                  d={pathData(points)}
+                  d={pathData(tool.id === 'blitz' ? points.slice(0, 2) : points)}
                   stroke={toolColor(tool)}
-                  strokeDasharray={toolDash(tool) || undefined}
+                  strokeDasharray={tool.id === 'blitz' ? BLITZ_FIRST_SEGMENT_DASH : toolDash(tool) || undefined}
+                  strokeLinecap={tool.id === 'dtb' ? 'round' : undefined}
                   className="play-designer-route preview"
                 />
+                {tool.id === 'blitz' && points.length > 2 && (
+                  <path
+                    d={pathData(points.slice(1))}
+                    stroke={toolColor(tool)}
+                    className="play-designer-route preview"
+                  />
+                )}
                 {cap && (
                   <line
                     x1={cap.x1}
@@ -792,7 +860,7 @@ export function PlayDesigner({ record, onClose }) {
           <button
             key={marker.id}
             type="button"
-            className={`play-designer-marker ${marker.team || 'offense'}${marker.id === selectedId ? ' selected' : ''}${activeTool !== 'select' ? ' anchorable' : ''}${themeClass}`}
+            className={`play-designer-marker ${marker.team || 'offense'}${marker.id === selectedId ? ' selected' : ''}${activeTool !== 'select' && activeTool !== 'dtb' ? ' anchorable' : ''}${themeClass}`}
             style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
             onPointerDown={(event) => handleMarkerPointerDown(event, marker.id)}
             onClick={(event) => handleMarkerClick(event, marker.id)}

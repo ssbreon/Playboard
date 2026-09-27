@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Search } from 'lucide-react'
 
 const PAGE_SIZE = 50
 
-export function DataGrid({ title, columns, fetchRows, onNew, newLabel = 'New', menuItems = [], rowActions, onRowDoubleClick, onBack }) {
+export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, categoryOptions, fetchRows, onNew, newLabel = 'New', menuItems = [], rowActions, onRowDoubleClick, onBack }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [page, setPage] = useState(0)
+  const [category, setCategory] = useState('')
+  const [searchName, setSearchName] = useState('')
+  const [namePrefix, setNamePrefix] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [openRowMenuId, setOpenRowMenuId] = useState(null)
   const [rowMenuPosition, setRowMenuPosition] = useState(null)
@@ -43,12 +47,17 @@ export function DataGrid({ title, columns, fetchRows, onNew, newLabel = 'New', m
     }
   }, [openRowMenuId])
 
+  useEffect(() => {
+    const timeout = setTimeout(() => setNamePrefix(searchName), 250)
+    return () => clearTimeout(timeout)
+  }, [searchName])
+
   // Loading/error/rows are driven by an async fetch, not derivable from props during render.
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchRows()
+    fetchRows({ category, namePrefix })
       .then((items) => {
         if (!cancelled) setRows(items)
       })
@@ -61,7 +70,7 @@ export function DataGrid({ title, columns, fetchRows, onNew, newLabel = 'New', m
     return () => {
       cancelled = true
     }
-  }, [fetchRows, refreshToken])
+  }, [fetchRows, refreshToken, category, namePrefix])
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages - 1)
@@ -79,15 +88,45 @@ export function DataGrid({ title, columns, fetchRows, onNew, newLabel = 'New', m
             </svg>
           </button>
         )}
-        <h1>{title}</h1>
+        <div className="data-grid-heading">
+          <h1>{title}</h1>
+          {subtitle && <p className="data-grid-context">{subtitle}</p>}
+        </div>
       </div>
       <div className="data-grid-toolbar">
-        <button type="button" className="toolbar-new-button" onClick={onNew}>
-          <svg className="toolbar-icon" viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-            <path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" />
-          </svg>
-          {newLabel}
-        </button>
+        <div className="data-grid-toolbar-actions">
+          <button type="button" className="toolbar-new-button" onClick={onNew}>
+            <svg className="toolbar-icon" viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+              <path fill="currentColor" d="M11 5h2v6h6v2h-6v6H5v-2h6z" />
+            </svg>
+            {newLabel}
+          </button>
+          <label className="data-grid-name-filter">
+            <Search size={17} aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Search by name"
+              value={searchName}
+              onChange={(event) => {
+                setSearchName(event.target.value)
+                setPage(0)
+              }}
+              placeholder="Search name"
+            />
+          </label>
+          {categoryOptions && (
+            <label className="data-grid-category-filter">
+              <span>Category</span>
+              <select value={category} onChange={(event) => {
+                setCategory(event.target.value)
+                setPage(0)
+              }}>
+                <option value="">All</option>
+                {categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
         <div className="toolbar-menu" ref={menuRef}>
           <button
             type="button"
@@ -128,6 +167,7 @@ export function DataGrid({ title, columns, fetchRows, onNew, newLabel = 'New', m
             <table className="data-grid-table">
               <thead>
                 <tr>
+                  {RowIcon && <th className="data-grid-type-header" scope="col" aria-label="Type" />}
                   {columns.map((column) => (
                     <th key={column.key}>{column.header}</th>
                   ))}
@@ -137,8 +177,8 @@ export function DataGrid({ title, columns, fetchRows, onNew, newLabel = 'New', m
               <tbody>
                 {pageRows.length === 0 && (
                   <tr>
-                    <td className="data-grid-empty" colSpan={columns.length + (rowActions ? 1 : 0)}>
-                      No {title.toLowerCase()} yet
+                    <td className="data-grid-empty" colSpan={columns.length + (RowIcon ? 1 : 0) + (rowActions ? 1 : 0)}>
+                      {namePrefix ? `No ${title.toLowerCase()} match your search` : category ? `No ${title.toLowerCase()} in ${category}` : `No ${title.toLowerCase()} yet`}
                     </td>
                   </tr>
                 )}
@@ -148,6 +188,11 @@ export function DataGrid({ title, columns, fetchRows, onNew, newLabel = 'New', m
                     onDoubleClick={onRowDoubleClick ? () => onRowDoubleClick(row) : undefined}
                     style={onRowDoubleClick ? { cursor: 'pointer' } : undefined}
                   >
+                    {RowIcon && (
+                      <td className="data-grid-type-cell" aria-label={rowType} title={rowType}>
+                        <RowIcon size={17} strokeWidth={2} aria-hidden="true" />
+                      </td>
+                    )}
                     {columns.map((column) => (
                       <td key={column.key}>{column.render ? column.render(row[column.key], row) : row[column.key]}</td>
                     ))}

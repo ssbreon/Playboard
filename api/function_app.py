@@ -33,16 +33,24 @@ class Storage:
                 partition_key={"paths": ["/partitionKey"], "kind": "Hash"},
             )
 
-    def list(self, entity_type, parent_id=None):
+    def list(self, entity_type, parent_id=None, category=None, name_prefix=None):
         if self.container:
             query = "SELECT * FROM c WHERE c.entityType = @entityType"
             parameters = [{"name": "@entityType", "value": entity_type}]
             if parent_id:
                 query += " AND c.parentId = @parentId"
                 parameters.append({"name": "@parentId", "value": parent_id})
+            if category is not None:
+                query += " AND c.category = @category"
+                parameters.append({"name": "@category", "value": category})
+            if name_prefix:
+                query += " AND STARTSWITH(c.name, @namePrefix, true)"
+                parameters.append({"name": "@namePrefix", "value": name_prefix})
             return list(self.container.query_items(query, parameters=parameters, enable_cross_partition_query=True))
         records = list(self.memory[entity_type].values())
-        return [record for record in records if not parent_id or record.get("parentId") == parent_id]
+        return [record for record in records if (not parent_id or record.get("parentId") == parent_id)
+                and (category is None or record.get("category") == category)
+                and (not name_prefix or (record.get("name") or "").casefold().startswith(name_prefix.casefold()))]
 
     def get(self, entity_type, item_id):
         if self.container:
@@ -139,7 +147,7 @@ def api(req: func.HttpRequest) -> func.HttpResponse:
 
     if path == ["playbooks"]:
         if method == "GET":
-            return response({"items": [with_child_count(p, "plays") for p in storage.list("playbooks")]})
+            return response({"items": [with_child_count(p, "plays") for p in storage.list("playbooks", category=req.params.get("category"), name_prefix=req.params.get("namePrefix"))]})
         if method == "POST":
             payload = body(req)
             if not payload.get("name"):
@@ -148,7 +156,7 @@ def api(req: func.HttpRequest) -> func.HttpResponse:
 
     if path == ["game-plans"]:
         if method == "GET":
-            return response({"items": [with_child_count(g, "scoutPlays") for g in storage.list("gamePlans")]})
+            return response({"items": [with_child_count(g, "scoutPlays") for g in storage.list("gamePlans", category=req.params.get("category"), name_prefix=req.params.get("namePrefix"))]})
         if method == "POST":
             payload = body(req)
             if not payload.get("name"):
@@ -172,7 +180,7 @@ def api(req: func.HttpRequest) -> func.HttpResponse:
         if len(path) >= 3 and path[2] == "scout-plays":
             entity_type = "scoutPlays"
             if len(path) == 3:
-                records = storage.list(entity_type, game_plan_id)
+                records = storage.list(entity_type, game_plan_id, req.params.get("category"), req.params.get("namePrefix"))
                 if method == "GET":
                     return response({"items": records})
                 if method == "POST":
@@ -208,7 +216,9 @@ def api(req: func.HttpRequest) -> func.HttpResponse:
             resource = path[2]
             entity_type = "plays" if resource == "plays" else "slides"
             if len(path) == 3:
-                records = storage.list(entity_type, playbook_id)
+                category = req.params.get("category") if resource == "plays" else None
+                name_prefix = req.params.get("namePrefix") if resource == "plays" else None
+                records = storage.list(entity_type, playbook_id, category, name_prefix)
                 if method == "GET":
                     return response({"items": records})
                 if method == "POST":

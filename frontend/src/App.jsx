@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { BookOpen, ClipboardList, Route, ScanSearch, Settings } from 'lucide-react'
 import { api } from './api'
 import { DataGrid } from './components/DataGrid'
-import { NewPlayDialog } from './components/NewPlayDialog'
+import { COLLECTION_CATEGORIES, NewCollectionDialog } from './components/NewCollectionDialog'
+import { NewPlayDialog, PLAY_CATEGORIES } from './components/NewPlayDialog'
 import { PlayDesigner } from './components/PlayDesigner'
 import { buildMarkersFromTemplate, PLAY_TEMPLATES } from './utils/formations'
 import { formatDate } from './utils/formatDate'
@@ -13,9 +15,18 @@ import './App.css'
 
 const GRID_COLUMNS = [
   { key: 'name', header: 'Name' },
+  { key: 'category', header: 'Category' },
   { key: 'playCount', header: 'Plays' },
   { key: 'createdAt', header: 'Created', render: formatDate },
   { key: 'updatedAt', header: 'Date Modified', render: formatDate },
+]
+
+const PLAYBOOK_GRID_COLUMNS = [GRID_COLUMNS[0], { key: 'year', header: 'Year' }, ...GRID_COLUMNS.slice(1)]
+const GAME_PLAN_GRID_COLUMNS = [
+  GRID_COLUMNS[0],
+  { key: 'year', header: 'Year' },
+  { key: 'opponent', header: 'Opponent' },
+  ...GRID_COLUMNS.slice(1),
 ]
 
 const PLAY_GRID_COLUMNS = [
@@ -91,11 +102,168 @@ function AppBar({ activeView, onNavigate }) {
   )
 }
 
+function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, updateParent, title, rowIcon, rowType, fetchRows, onBack, onNew, newLabel, onOpenPlay, rowActions }) {
+  const [name, setName] = useState(parentRecord.name)
+  const [savedName, setSavedName] = useState(parentRecord.name)
+  const [category, setCategory] = useState(parentRecord.category || 'Defense')
+  const [savedCategory, setSavedCategory] = useState(parentRecord.category || 'Defense')
+  const [year, setYear] = useState(String(parentRecord.year || new Date().getFullYear()))
+  const [savedYear, setSavedYear] = useState(String(parentRecord.year || new Date().getFullYear()))
+  const [opponent, setOpponent] = useState(parentRecord.opponent || '')
+  const [savedOpponent, setSavedOpponent] = useState(parentRecord.opponent || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [draftCategory, setDraftCategory] = useState(category)
+  const [draftYear, setDraftYear] = useState(year)
+  const [draftOpponent, setDraftOpponent] = useState(opponent)
+  const trimmedName = name.trim()
+  const metadataIsDirty = category !== savedCategory || year !== savedYear || (parentRecord.kind === 'gamePlan' && opponent !== savedOpponent)
+  const isDirty = name !== savedName || metadataIsDirty
+
+  async function handleSave() {
+    if (!trimmedName || !isDirty) return
+    setSaving(true)
+    setError(null)
+    try {
+      const payload = { name: trimmedName }
+      if (metadataIsDirty) {
+        payload.category = category
+        payload.year = Number(year)
+        if (parentRecord.kind === 'gamePlan') payload.opponent = opponent
+      }
+      const updated = await updateParent(parentRecord.id, payload)
+      setName(updated.name)
+      setSavedName(updated.name)
+      setSavedCategory(category)
+      setSavedYear(String(updated.year ?? year))
+      setYear(String(updated.year ?? year))
+      if (parentRecord.kind === 'gamePlan') {
+        setSavedOpponent(opponent)
+        setOpponent(opponent)
+      }
+      onParentUpdated(updated)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleUndo() {
+    setName(savedName)
+    setCategory(savedCategory)
+    setYear(savedYear)
+    setOpponent(savedOpponent)
+    setError(null)
+  }
+
+  function openSettings() {
+    setDraftCategory(category)
+    setDraftYear(year)
+    setDraftOpponent(opponent)
+    setSettingsOpen(true)
+  }
+
+  function handleSettingsSave(event) {
+    event.preventDefault()
+    setCategory(draftCategory)
+    setYear(draftYear)
+    if (parentRecord.kind === 'gamePlan') setOpponent(draftOpponent.trim())
+    setError(null)
+    setSettingsOpen(false)
+  }
+
+  return (
+    <main className="plays-drillthrough-view">
+      <section className="collection-details" aria-label={`${parentLabel} details`}>
+        <div className="play-designer-header">
+          <button type="button" className="play-designer-back" onClick={onBack} aria-label={`Back to ${parentLabel}s`}>
+            <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+              <path fill="currentColor" d="M15 4 7 12l8 8 1.4-1.4L9.8 12l6.6-6.6z" />
+            </svg>
+          </button>
+          <input
+            className="play-designer-name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            aria-label={`${parentLabel} name`}
+          />
+          <button type="button" className="play-designer-back" onClick={openSettings} aria-label={`${parentLabel} settings`}>
+            <Settings size={18} aria-hidden="true" />
+          </button>
+          <button type="button" className="play-designer-undo" onClick={handleUndo} disabled={saving || !isDirty}>
+            Undo
+          </button>
+          <button type="button" className="play-designer-save" onClick={handleSave} disabled={saving || !isDirty || !trimmedName}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {error && <p className="data-grid-status data-grid-error">Unable to save: {error}</p>}
+      </section>
+      {settingsOpen && (
+        <div className="dialog-overlay" onClick={() => setSettingsOpen(false)}>
+          <form className="dialog-panel" onClick={(event) => event.stopPropagation()} onSubmit={handleSettingsSave}>
+            <h2>{parentLabel} Settings</h2>
+            <label className="dialog-field">
+              <span>Category</span>
+              <select value={draftCategory} onChange={(event) => setDraftCategory(event.target.value)}>
+                {COLLECTION_CATEGORIES.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+            <label className="dialog-field">
+              <span>Year</span>
+              <input
+                type="number"
+                min="1000"
+                max="9999"
+                step="1"
+                value={draftYear}
+                onChange={(event) => setDraftYear(event.target.value)}
+                required
+              />
+            </label>
+            {parentRecord.kind === 'gamePlan' && (
+              <label className="dialog-field">
+                <span>Opponent</span>
+                <input type="text" value={draftOpponent} onChange={(event) => setDraftOpponent(event.target.value)} />
+              </label>
+            )}
+            <div className="dialog-actions">
+              <button type="button" className="dialog-cancel" onClick={() => setSettingsOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="dialog-create">
+                OK
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      <DataGrid
+        title={title}
+        columns={PLAY_GRID_COLUMNS}
+        rowIcon={rowIcon}
+        rowType={rowType}
+        categoryOptions={PLAY_CATEGORIES}
+        fetchRows={fetchRows}
+        onNew={onNew}
+        newLabel={newLabel}
+        onRowDoubleClick={onOpenPlay}
+        rowActions={rowActions}
+      />
+    </main>
+  )
+}
+
 function App() {
   const [view, setView] = useState('home')
   const [parent, setParent] = useState(null)
   const [designer, setDesigner] = useState(null)
   const [newDialog, setNewDialog] = useState(null)
+  const [newCollection, setNewCollection] = useState(null)
   const [count, setCount] = useState(0)
   const [apiStatus, setApiStatus] = useState('Connecting to API...')
   const [playbookCount, setPlaybookCount] = useState(0)
@@ -113,18 +281,50 @@ function App() {
       .catch((error) => setApiStatus(`API unavailable: ${error.message}`))
   }, [])
 
-  async function handleNewPlaybook() {
-    const name = window.prompt('Playbook name')
-    if (!name) return
-    await api.createPlaybook({ name })
-    setPlaybooksReloadToken((t) => t + 1)
+  async function handleCreateCollection(payload) {
+    if (newCollection === 'playbook') {
+      await api.createPlaybook(payload)
+      setPlaybooksReloadToken((t) => t + 1)
+    } else {
+      await api.createGamePlan(payload)
+      setGamePlansReloadToken((t) => t + 1)
+    }
+    setNewCollection(null)
   }
 
-  async function handleNewGamePlan() {
-    const name = window.prompt('Game plan name')
-    if (!name) return
-    await api.createGamePlan({ name })
-    setGamePlansReloadToken((t) => t + 1)
+  async function handleCopyCollection(kind, row) {
+    const payload = {
+      name: `${row.name} (Copy)`,
+      category: row.category,
+      year: row.year,
+      ...(kind === 'gamePlan' && { opponent: row.opponent }),
+    }
+    if (kind === 'playbook') {
+      await api.createPlaybook(payload)
+      setPlaybooksReloadToken((t) => t + 1)
+    } else {
+      await api.createGamePlan(payload)
+      setGamePlansReloadToken((t) => t + 1)
+    }
+  }
+
+  async function handleDeleteCollection(kind, row) {
+    if (!window.confirm(`Delete "${row.name}"?`)) return
+    if (kind === 'playbook') {
+      await api.deletePlaybook(row.id)
+      setPlaybooksReloadToken((t) => t + 1)
+    } else {
+      await api.deleteGamePlan(row.id)
+      setGamePlansReloadToken((t) => t + 1)
+    }
+  }
+
+  function collectionRowActions(kind) {
+    return (row) => [
+      { key: 'open', label: 'Open', onClick: (item) => setParent({ ...item, kind }) },
+      { key: 'copy', label: 'Copy', onClick: (item) => handleCopyCollection(kind, item) },
+      { key: 'delete', label: 'Delete', destructive: true, onClick: (item) => handleDeleteCollection(kind, item) },
+    ]
   }
 
   async function handleCreatePlay(name, templateId, theme, category, fieldDecoration, fieldOrientation) {
@@ -222,9 +422,19 @@ function App() {
       <NewPlayDialog
         open={newDialog !== null}
         titleLabel={newDialog?.target === 'scoutPlay' ? 'New Scout Play' : 'New Play'}
+        titleIcon={newDialog?.target === 'scoutPlay' ? ScanSearch : Route}
         onCancel={() => setNewDialog(null)}
         onCreate={handleCreatePlay}
       />
+      {newCollection && (
+        <NewCollectionDialog
+          title={newCollection === 'playbook' ? 'Add New Playbook' : 'Add New Game Plan'}
+          titleIcon={newCollection === 'playbook' ? BookOpen : ClipboardList}
+          isPlaybook={newCollection === 'playbook'}
+          onCancel={() => setNewCollection(null)}
+          onCreate={handleCreateCollection}
+        />
+      )}
 
       {designer ? (
         <PlayDesigner
@@ -233,27 +443,37 @@ function App() {
           onClose={() => setDesigner(null)}
         />
       ) : parent?.kind === 'playbook' ? (
-        <DataGrid
+        <PlaysDrillthroughView
           key={`plays-${parent.id}-${playsReloadToken}`}
+          parentRecord={parent}
+          parentLabel="Playbook"
+          onParentUpdated={(updated) => setParent((current) => ({ ...current, ...updated, kind: 'playbook' }))}
+          updateParent={api.updatePlaybook}
           title="Plays"
-          columns={PLAY_GRID_COLUMNS}
-          fetchRows={() => api.listPlays(parent.id).then((result) => result.items)}
+          rowIcon={Route}
+          rowType="Play"
+          fetchRows={({ category, namePrefix }) => api.listPlays(parent.id, category, namePrefix).then((result) => result.items)}
           onNew={() => setNewDialog({ target: 'play', parentId: parent.id })}
           newLabel="New Play"
           onBack={() => setParent(null)}
-          onRowDoubleClick={(row) => openDesignerForRow('play', parent.id, row)}
+          onOpenPlay={(row) => openDesignerForRow('play', parent.id, row)}
           rowActions={playRowActions('play', parent.id)}
         />
       ) : parent?.kind === 'gamePlan' ? (
-        <DataGrid
+        <PlaysDrillthroughView
           key={`scoutPlays-${parent.id}-${scoutPlaysReloadToken}`}
+          parentRecord={parent}
+          parentLabel="Game Plan"
+          onParentUpdated={(updated) => setParent((current) => ({ ...current, ...updated, kind: 'gamePlan' }))}
+          updateParent={api.updateGamePlan}
           title="Scout Plays"
-          columns={PLAY_GRID_COLUMNS}
-          fetchRows={() => api.listScoutPlays(parent.id).then((result) => result.items)}
+          rowIcon={ScanSearch}
+          rowType="Scout Play"
+          fetchRows={({ category, namePrefix }) => api.listScoutPlays(parent.id, category, namePrefix).then((result) => result.items)}
           onNew={() => setNewDialog({ target: 'scoutPlay', parentId: parent.id })}
           newLabel="New Scout Play"
           onBack={() => setParent(null)}
-          onRowDoubleClick={(row) => openDesignerForRow('scoutPlay', parent.id, row)}
+          onOpenPlay={(row) => openDesignerForRow('scoutPlay', parent.id, row)}
           rowActions={playRowActions('scoutPlay', parent.id)}
         />
       ) : (
@@ -262,11 +482,15 @@ function App() {
         <DataGrid
           key={`playbooks-${playbooksReloadToken}`}
           title="Playbooks"
-          columns={GRID_COLUMNS}
-          fetchRows={() => api.listPlaybooks().then((result) => result.items)}
-          onNew={handleNewPlaybook}
+          columns={PLAYBOOK_GRID_COLUMNS}
+          rowIcon={BookOpen}
+          rowType="Playbook"
+          categoryOptions={COLLECTION_CATEGORIES}
+          fetchRows={({ category, namePrefix }) => api.listPlaybooks(category, namePrefix).then((result) => result.items)}
+          onNew={() => setNewCollection('playbook')}
           newLabel="New Playbook"
-          onRowDoubleClick={(row) => setParent({ kind: 'playbook', id: row.id, name: row.name })}
+          rowActions={collectionRowActions('playbook')}
+          onRowDoubleClick={(row) => setParent({ ...row, kind: 'playbook' })}
         />
       )}
 
@@ -274,11 +498,15 @@ function App() {
         <DataGrid
           key={`gamePlans-${gamePlansReloadToken}`}
           title="Game Plans"
-          columns={GRID_COLUMNS}
-          fetchRows={() => api.listGamePlans().then((result) => result.items)}
-          onNew={handleNewGamePlan}
+          columns={GAME_PLAN_GRID_COLUMNS}
+          rowIcon={ClipboardList}
+          rowType="Game Plan"
+          categoryOptions={COLLECTION_CATEGORIES}
+          fetchRows={({ category, namePrefix }) => api.listGamePlans(category, namePrefix).then((result) => result.items)}
+          onNew={() => setNewCollection('gamePlan')}
           newLabel="New Game Plan"
-          onRowDoubleClick={(row) => setParent({ kind: 'gamePlan', id: row.id, name: row.name })}
+          rowActions={collectionRowActions('gamePlan')}
+          onRowDoubleClick={(row) => setParent({ ...row, kind: 'gamePlan' })}
         />
       )}
 

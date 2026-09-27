@@ -4,7 +4,7 @@ export const PLAY_THEMES = [
     id: 'color',
     label: 'Green Field',
     fieldClass: '',
-    strokeColor: null,
+    strokeColor: '#f59e0b',
     toolDash: null,
   },
   {
@@ -13,7 +13,7 @@ export const PLAY_THEMES = [
     fieldClass: 'printer-friendly',
     strokeColor: '#000',
     // Distinguishes tool types by dash pattern instead of color when printing in black & white.
-    toolDash: { block: null, route: null, blitz: '6 4', coverage: '1 4' },
+    toolDash: { block: null, route: null, coverage: '1 4' },
   },
   {
     id: 'blackboard',
