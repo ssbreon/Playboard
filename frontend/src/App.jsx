@@ -63,7 +63,7 @@ function AppBar({ activeView, onNavigate }) {
 
   return (
     <header className="app-bar">
-      <div className="app-bar-brand">Coaches Playboard</div>
+      <div className="app-bar-brand">Playbook Forge</div>
       <nav className="app-bar-nav">
         <a
           href="#playbooks"
@@ -164,7 +164,7 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
     }
   }
 
-  function handleUndo() {
+  function handleCancel() {
     setName(savedName)
     setCategory(savedCategory)
     setYear(savedYear)
@@ -211,8 +211,8 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
           <button type="button" className="play-designer-back" onClick={openSettings} aria-label={`${parentLabel} settings`}>
             <Settings size={18} aria-hidden="true" />
           </button>
-          <button type="button" className="play-designer-undo" onClick={handleUndo} disabled={saving || !isDirty}>
-            Undo
+          <button type="button" className="play-designer-cancel" onClick={handleCancel} disabled={saving || !isDirty}>
+            Cancel
           </button>
           <button type="button" className="play-designer-save" onClick={handleSave} disabled={saving || !isDirty || !trimmedName}>
             {saving ? 'Saving...' : 'Save'}

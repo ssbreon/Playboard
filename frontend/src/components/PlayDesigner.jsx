@@ -44,6 +44,21 @@ const TOOL_ICONS = {
 
 const EMPTY_DRAWINGS = { block: [], dtb: [], route: [], blitz: [], coverage: [] }
 
+const PLAYER_COLORS = ['#ffffff', '#1d4ed8', '#b91c1c', '#15803d', '#f59e0b', '#7c3aed', '#374151']
+const TEXT_FONT_SIZES = [12, 14, 16, 20, 24, 32]
+const TEXT_STYLE_TOGGLES = [
+  { id: 'bold', label: 'Bold', glyph: 'B' },
+  { id: 'italic', label: 'Italic', glyph: 'I' },
+  { id: 'underline', label: 'Underline', glyph: 'U' },
+  { id: 'box', label: 'Box', glyph: 'Box' },
+]
+const PLAYER_DECORATIONS = [
+  { id: 'solid', label: 'Solid' },
+  { id: 'half-left', label: 'Left half' },
+  { id: 'half-right', label: 'Right half' },
+  { id: 'vertical-line', label: 'Vertical line' },
+]
+
 function normalizeDrawings(source) {
   return { ...EMPTY_DRAWINGS, ...(source || {}) }
 }
@@ -194,7 +209,7 @@ export function PlayDesigner({ record, onClose }) {
     }
   }
 
-  function handleUndo() {
+  function handleCancel() {
     setName(original.current.name)
     setMarkers(original.current.markers)
     setDrawings(original.current.drawings)
@@ -337,7 +352,31 @@ export function PlayDesigner({ record, onClose }) {
     setDragTextId(id)
   }
 
-  function textAnnotationWidth(text) {
+  function updateTextAppearance(id, updates) {
+    setTextAnnotations((current) =>
+      current.map((annotation) => {
+        if (annotation.id !== id) return annotation
+        const updated = { ...annotation, ...updates }
+        for (const key of ['color', 'fontSize', 'bold', 'italic', 'underline', 'box']) {
+          if (!updated[key]) delete updated[key]
+        }
+        return updated
+      }),
+    )
+  }
+
+  function textAnnotationStyle(annotation) {
+    return {
+      color: annotation.color,
+      fontSize: annotation.fontSize ? `${annotation.fontSize}px` : undefined,
+      fontWeight: annotation.bold ? 700 : undefined,
+      fontStyle: annotation.italic ? 'italic' : undefined,
+      textDecoration: annotation.underline ? 'underline' : undefined,
+    }
+  }
+
+  function textAnnotationWidth(annotation) {
+    const text = annotation.text
     if (!textMeasureCanvas.current) {
       textMeasureCanvas.current = document.createElement('canvas')
     }
@@ -345,7 +384,8 @@ export function PlayDesigner({ record, onClose }) {
     const field = fieldRef.current
     if (!context || !field) return 150
     const style = window.getComputedStyle(field)
-    context.font = style.font
+    const fontSize = annotation.fontSize ? `${annotation.fontSize}px` : style.fontSize
+    context.font = `${annotation.italic ? 'italic ' : ''}${annotation.bold ? '700 ' : ''}${fontSize} ${style.fontFamily}`
     return Math.max(134, Math.ceil(context.measureText(text || 'Enter text').width))
   }
 
@@ -362,6 +402,7 @@ export function PlayDesigner({ record, onClose }) {
   function handleMarkerPointerDown(event, id) {
     if (activeTool !== 'select') return
     event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
     setSelectedId(id)
     setSelectedDrawing(null)
       setSelectedTextId(null)
@@ -374,6 +415,30 @@ export function PlayDesigner({ record, onClose }) {
     setActiveChain({ type: activeTool, anchorId: id, points: [] })
     setSelectedDrawing(null)
     setCursorPos(null)
+  }
+
+  function updateMarkerAppearance(id, updates) {
+    setMarkers((current) =>
+      current.map((marker) => {
+        if (marker.id !== id) return marker
+        const updated = { ...marker, ...updates }
+        if (!updated.color) delete updated.color
+        if (!updated.decoration || updated.decoration === 'solid') delete updated.decoration
+        return updated
+      }),
+    )
+  }
+
+  function updateDrawingAppearance(type, id, updates) {
+    setDrawings((current) => ({
+      ...current,
+      [type]: current[type].map((drawing) => {
+        if (drawing.id !== id) return drawing
+        const updated = { ...drawing, ...updates }
+        if (!updated.color) delete updated.color
+        return updated
+      }),
+    }))
   }
 
   function handleDrawingClick(event, type, id) {
@@ -553,6 +618,14 @@ export function PlayDesigner({ record, onClose }) {
 
   const allDrawings = Object.entries(drawings).flatMap(([type, list]) => list.map((drawing) => ({ ...drawing, type })))
   const chainAnchor = activeChain ? drawingAnchor(activeChain) : null
+  const selectedMarker = markers.find((marker) => marker.id === selectedId)
+  const appearanceEnabled = Boolean(selectedMarker && activeTool === 'select')
+  const selectedPath = selectedDrawing && (drawings[selectedDrawing.type] || []).find((drawing) => drawing.id === selectedDrawing.id)
+  const selectedPathTool = selectedPath && DRAWING_TOOLS.find((tool) => tool.id === selectedDrawing.type)
+  const pathAppearanceVisible = Boolean(selectedPath && selectedPathTool && activeTool === 'select')
+  const selectedText = textAnnotations.find((annotation) => annotation.id === selectedTextId)
+  const textAppearanceVisible = Boolean(selectedText && activeTool === 'select')
+  const defaultTextColor = activeTheme.fieldClass === 'printer-friendly' ? '#000000' : '#ffffff'
   const isEmpty = markers.length === 0 && allDrawings.length === 0 && textAnnotations.length === 0
 
   function toolButton(tool) {
@@ -599,8 +672,8 @@ export function PlayDesigner({ record, onClose }) {
             />
           </svg>
         </button>
-        <button type="button" className="play-designer-undo" onClick={handleUndo} disabled={saving || !isDirty}>
-          Undo
+        <button type="button" className="play-designer-cancel" onClick={handleCancel} disabled={saving || !isDirty}>
+          Cancel
         </button>
         <button type="button" className="play-designer-save" onClick={handleSave} disabled={saving || !isDirty}>
           {saving ? 'Saving...' : 'Save'}
@@ -723,6 +796,169 @@ export function PlayDesigner({ record, onClose }) {
           )}
         </div>
       </div>
+      {pathAppearanceVisible ? (
+      <div className="player-appearance-panel" aria-label={`Appearance for ${selectedPathTool.label} path`}>
+        <span className="player-label-field">{selectedPathTool.label}</span>
+        <div className="player-appearance-group" role="group" aria-label="Path color">
+          <button
+            type="button"
+            className={`player-color-reset${!selectedPath.color ? ' active' : ''}`}
+            onClick={() => updateDrawingAppearance(selectedDrawing.type, selectedPath.id, { color: null })}
+            aria-pressed={!selectedPath.color}
+          >
+            Default color
+          </button>
+          {PLAYER_COLORS.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className={`player-color-swatch${selectedPath.color === color ? ' active' : ''}`}
+              style={{ '--swatch-color': color }}
+              onClick={() => updateDrawingAppearance(selectedDrawing.type, selectedPath.id, { color })}
+              aria-label={`Set path color to ${color}`}
+              aria-pressed={selectedPath.color === color}
+            />
+          ))}
+          <label className="player-custom-color" title="Custom color">
+            <input
+              type="color"
+              value={selectedPath.color || toolColor(selectedPathTool)}
+              onChange={(event) => updateDrawingAppearance(selectedDrawing.type, selectedPath.id, { color: event.target.value })}
+              aria-label="Custom path color"
+            />
+          </label>
+        </div>
+      </div>
+      ) : textAppearanceVisible ? (
+      <div className="player-appearance-panel" aria-label="Text appearance">
+        <span className="player-label-field">Text</span>
+        <div className="player-appearance-group" role="group" aria-label="Text color">
+          <button
+            type="button"
+            className={`player-color-reset${!selectedText.color ? ' active' : ''}`}
+            onClick={() => updateTextAppearance(selectedText.id, { color: null })}
+            aria-pressed={!selectedText.color}
+          >
+            Default color
+          </button>
+          {PLAYER_COLORS.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className={`player-color-swatch${selectedText.color === color ? ' active' : ''}`}
+              style={{ '--swatch-color': color }}
+              onClick={() => updateTextAppearance(selectedText.id, { color })}
+              aria-label={`Set text color to ${color}`}
+              aria-pressed={selectedText.color === color}
+            />
+          ))}
+          <label className="player-custom-color" title="Custom color">
+            <input
+              type="color"
+              value={selectedText.color || defaultTextColor}
+              onChange={(event) => updateTextAppearance(selectedText.id, { color: event.target.value })}
+              aria-label="Custom text color"
+            />
+          </label>
+        </div>
+        <label className="text-size-field">
+          <span>Size</span>
+          <select
+            value={selectedText.fontSize || ''}
+            onChange={(event) => updateTextAppearance(selectedText.id, { fontSize: Number(event.target.value) || null })}
+            aria-label="Text size"
+          >
+            <option value="">Default</option>
+            {TEXT_FONT_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size}px
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="player-appearance-group" role="group" aria-label="Text style">
+          {TEXT_STYLE_TOGGLES.map((toggle) => (
+            <button
+              key={toggle.id}
+              type="button"
+              className={`text-style-toggle ${toggle.id}${selectedText[toggle.id] ? ' active' : ''}`}
+              onClick={() => updateTextAppearance(selectedText.id, { [toggle.id]: !selectedText[toggle.id] })}
+              aria-label={toggle.label}
+              aria-pressed={Boolean(selectedText[toggle.id])}
+              title={toggle.label}
+            >
+              {toggle.glyph}
+            </button>
+          ))}
+        </div>
+      </div>
+      ) : (
+      <div
+        className={`player-appearance-panel${appearanceEnabled ? '' : ' disabled'}`}
+        aria-label={appearanceEnabled ? `Appearance for ${selectedMarker.label || 'player'}` : 'Player appearance'}
+        aria-disabled={!appearanceEnabled}
+      >
+        <label className="player-label-field">
+          <span>Player</span>
+          <input
+            type="text"
+            value={selectedMarker?.label ?? ''}
+            onChange={(event) => updateMarkerAppearance(selectedMarker.id, { label: event.target.value })}
+            aria-label="Player label"
+            disabled={!appearanceEnabled}
+          />
+        </label>
+        <div className="player-appearance-group" role="group" aria-label="Player color">
+          <button
+            type="button"
+            className={`player-color-reset${appearanceEnabled && !selectedMarker.color ? ' active' : ''}`}
+            onClick={() => updateMarkerAppearance(selectedMarker.id, { color: null })}
+            aria-pressed={appearanceEnabled && !selectedMarker.color}
+            disabled={!appearanceEnabled}
+          >
+            Team color
+          </button>
+          {PLAYER_COLORS.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className={`player-color-swatch${appearanceEnabled && selectedMarker.color === color ? ' active' : ''}`}
+              style={{ '--swatch-color': color }}
+              onClick={() => updateMarkerAppearance(selectedMarker.id, { color })}
+              aria-label={`Set player color to ${color}`}
+              aria-pressed={appearanceEnabled && selectedMarker.color === color}
+              disabled={!appearanceEnabled}
+            />
+          ))}
+          <label className="player-custom-color" title="Custom color">
+            <input
+              type="color"
+              value={selectedMarker?.color || (selectedMarker?.team === 'defense' ? '#b91c1c' : '#1d4ed8')}
+              onChange={(event) => updateMarkerAppearance(selectedMarker.id, { color: event.target.value })}
+              aria-label="Custom player color"
+              disabled={!appearanceEnabled}
+            />
+          </label>
+        </div>
+        <div className="player-appearance-group" role="group" aria-label="Player decoration">
+          {PLAYER_DECORATIONS.map((decoration) => {
+            const isActive = appearanceEnabled && (selectedMarker.decoration || 'solid') === decoration.id
+            return (
+              <button
+                key={decoration.id}
+                type="button"
+                className={`player-decoration-option ${decoration.id}${isActive ? ' active' : ''}`}
+                onClick={() => updateMarkerAppearance(selectedMarker.id, { decoration: decoration.id })}
+                aria-label={decoration.label}
+                aria-pressed={isActive}
+                title={decoration.label}
+                disabled={!appearanceEnabled}
+              />
+            )
+          })}
+        </div>
+      </div>
+      )}
       <div
         ref={fieldRef}
         className={`play-designer-field${activeTool !== 'select' ? ' drawing' : ''}${themeClass}`}
@@ -758,11 +994,12 @@ export function PlayDesigner({ record, onClose }) {
         {textAnnotations.map((annotation) => (
           <input
             key={annotation.id}
-            className={`play-designer-text-annotation${annotation.id === selectedTextId ? ' selected' : ''}`}
+            className={`play-designer-text-annotation${annotation.box ? ' boxed' : ''}${annotation.id === selectedTextId ? ' selected' : ''}`}
             style={{
               left: `${annotation.x}%`,
               top: `${annotation.y}%`,
-              width: `${textAnnotationWidth(annotation.text)}px`,
+              width: `${textAnnotationWidth(annotation)}px`,
+              ...textAnnotationStyle(annotation),
             }}
             value={annotation.text}
             placeholder="Enter text"
@@ -795,11 +1032,18 @@ export function PlayDesigner({ record, onClose }) {
               ...drawing.points.map((p) => ({ x: anchor.x + p.dx, y: anchor.y + p.dy })),
             ]
             const isSelected = selectedDrawing?.type === drawing.type && selectedDrawing?.id === drawing.id
-            const color = isSelected ? '#ef4444' : toolColor(tool)
+            const color = drawing.color || toolColor(tool)
             const cap = tool.endCap === 'tbar' ? tbarCapPoints(points) : null
             const arrow = tool.arrow ? arrowCapPoints(points) : null
             return (
-              <g key={drawing.id}>
+              <g key={drawing.id} className={isSelected ? 'play-designer-drawing selected' : 'play-designer-drawing'}>
+                {isSelected && (
+                  <g className="play-designer-selection-halo">
+                    <path d={pathData(points)} />
+                    {cap && <line x1={cap.x1} y1={cap.y1} x2={cap.x2} y2={cap.y2} />}
+                    {arrow && <polygon points={arrow} />}
+                  </g>
+                )}
                 <path
                   className={`play-designer-route${isSelected ? ' selected' : ''}`}
                   d={pathData(tool.id === 'blitz' ? points.slice(0, 2) : points)}
@@ -904,8 +1148,14 @@ export function PlayDesigner({ record, onClose }) {
           <button
             key={marker.id}
             type="button"
-            className={`play-designer-marker ${marker.team || 'offense'}${marker.id === selectedId ? ' selected' : ''}${activeTool !== 'select' && activeTool !== 'dtb' ? ' anchorable' : ''}${themeClass}`}
-            style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
+            className={`play-designer-marker ${marker.team || 'offense'} ${marker.decoration || 'solid'}${marker.color ? ' color-override' : ''}${marker.id === selectedId ? ' selected' : ''}${activeTool !== 'select' && activeTool !== 'dtb' ? ' anchorable' : ''}${themeClass}`}
+            style={{
+              left: `${marker.x}%`,
+              top: `${marker.y}%`,
+              '--marker-color': marker.color,
+              '--marker-decoration-color': marker.color?.toLowerCase() === '#ffffff' ? '#374151' : marker.color,
+              '--marker-override-text': marker.color?.toLowerCase() === '#ffffff' ? '#111' : '#fff',
+            }}
             onPointerDown={(event) => handleMarkerPointerDown(event, marker.id)}
             onClick={(event) => handleMarkerClick(event, marker.id)}
             aria-label="Player marker"

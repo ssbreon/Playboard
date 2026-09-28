@@ -1,11 +1,16 @@
 :root {
   --text: #6b6375;
   --text-h: #08060d;
-  --bg: #fff;
+  --bg: #858b94;
+  --form-bg: #dfe2e6;
+  --input-bg: #fff;
   --border: #e5e4e7;
-  --code-bg: #f4f3ec;
+  --code-bg: #e5e7eb;
+  --context-menu-bg: #fff;
   --accent: #aa3bff;
   --primary-button: #513684;
+  --secondary-button: transparent;
+  --primary-tab: #59555F;
   --accent-bg: rgba(170, 59, 255, 0.1);
   --accent-border: rgba(170, 59, 255, 0.5);
   --social-bg: rgba(244, 243, 236, 0.5);
