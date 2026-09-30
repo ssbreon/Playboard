@@ -8,7 +8,6 @@ import { PlayDesigner } from './components/PlayDesigner'
 import { buildMarkersFromTemplate, PLAY_TEMPLATES } from './utils/formations'
 import { formatDate } from './utils/formatDate'
 import { themeLabel } from './utils/themes'
-import heroImg from './assets/hero.png'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import './App.css'
@@ -63,7 +62,10 @@ function AppBar({ activeView, onNavigate }) {
 
   return (
     <header className="app-bar">
-      <div className="app-bar-brand">Playbook Forge</div>
+      <div className="app-bar-brand">
+        <img className="app-bar-logo" src="/blitzboard-mark.svg" alt="" aria-hidden="true" />
+        <span className="app-bar-wordmark">BLITZBOARD <span className="app-bar-wordmark-accent">Studio</span></span>
+      </div>
       <nav className="app-bar-nav">
         <a
           href="#playbooks"
@@ -539,9 +541,7 @@ function App() {
         <>
       <section id="center">
         <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+          <img src="/blitzboardstudio.png" className="hero-logo" width="300" alt="BLITZBOARD Studio logo" />
         </div>
         <div>
           <h1>Get started</h1>

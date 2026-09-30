@@ -1,3 +1,12 @@
+:where(button:not(:disabled)) {
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.22), 0 3px 5px rgba(0, 0, 0, 0.12);
+}
+
+button:active:not(:disabled) {
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.18);
+  translate: 0 1px;
+}
+
 .app-bar {
   --app-bar-foreground: #f3f4f6;
   --app-bar-state-background: rgba(255, 255, 255, 0.12);
@@ -6,7 +15,7 @@
   align-items: center;
   gap: 24px;
   padding: 10px 32px;
-  background: #2F2C35;
+  background: var(--navy);
 
   @media (max-width: 1024px) {
     padding: 12px 20px;
@@ -19,8 +28,8 @@
   flex-direction: column;
   /* gap: 16px; */
   flex-grow: 1;
-  padding: 20px 32px 32px;
-  background: var(--form-bg);
+  padding: 10px 16px;
+  background: var(--primary-tab);
 
   @media (max-width: 1024px) {
     padding: 16px 20px 24px;
@@ -42,7 +51,7 @@
   flex-shrink: 0;
   padding: 0;
   border-radius: 6px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--secondary-button-border);
   background: var(--secondary-button);
   color: var(--text-h);
   cursor: pointer;
@@ -62,12 +71,12 @@
   min-width: 0;
   font: inherit;
   font-family: var(--heading);
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-h);
-  background: white;
+  background: var(--input-bg);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 6px;
   border-bottom: 2px solid transparent;
   padding: 4px 2px;
 
@@ -82,7 +91,7 @@
   font-size: 15px;
   padding: 8px 20px;
   border-radius: 6px;
-  border: 1px solid var(--primary-button);
+  border: 1px solid var(--secondary-button-border);
   background: var(--secondary-button);
   color: var(--text-h);
   cursor: pointer;
@@ -128,8 +137,7 @@
 
 .collection-details {
   padding: 10px 16px;
-  background: var(--form-bg);
-  border-bottom: 1px solid #d4d8dd;
+  background: var(--primary-tab);
 
   @media (prefers-color-scheme: dark) {
     background: var(--code-bg);
@@ -141,49 +149,17 @@
   }
 
   .play-designer-back {
-    background: transparent;
-    border-color: transparent;
+    background: var(--secondary-button);
+    border-color: var(--secondary-button-border);
     color: var(--text-h);
 
     &:hover {
-      background: rgba(0, 0, 0, 0.06);
-      border-color: transparent;
+      border-color: var(--accent-border);
     }
 
     @media (prefers-color-scheme: dark) {
       &:hover {
         background: rgba(255, 255, 255, 0.08);
-      }
-    }
-  }
-
-  .play-designer-name {
-    height: 36px;
-    box-sizing: border-box;
-    padding: 0 8px;
-    font-size: 20px;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    transition: border-color 0.15s, background-color 0.15s;
-
-    &:hover {
-      border-color: #c5cad0;
-    }
-
-    &:focus {
-      background: var(--input-bg);
-      border-color: var(--primary-button);
-      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-button) 20%, transparent);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      &:hover {
-        border-color: var(--border);
-      }
-
-      &:focus {
-        background: var(--bg);
       }
     }
   }
@@ -241,6 +217,7 @@
   min-height: 420px;
   border-radius: 12px;
   border: 1px solid var(--border);
+  margin-top: 10px;
   background: repeating-linear-gradient(
     to bottom,
     #2f6b3c 0,
@@ -366,10 +343,9 @@
 .player-appearance-panel {
   display: flex;
   align-items: center;
-  gap: 12px;
-  /* margin-top: -16px; */
-  min-height: 42px;
-  padding: 6px 10px;
+  justify-content: flex-start;
+  gap: 16px;
+  padding: 2px 10px;
   border: 1px solid var(--border);
   border-radius: 0 0 6px 6px;
   background: var(--code-bg);
@@ -378,13 +354,16 @@
 }
 
 .player-appearance-panel.disabled {
-  opacity: 0.45;
-  filter: grayscale(0.75);
+  filter: grayscale(1);
 
   button,
   input,
   .player-custom-color {
     cursor: not-allowed;
+  }
+
+  input {
+    background-color: transparent;
   }
 }
 
@@ -401,12 +380,12 @@
   font-weight: 700;
 
   input {
-    width: 62px;
-    min-height: 28px;
-    padding: 4px 7px;
+    width: 42px;
+    min-height: 20px;
+    padding: 2px 2px;
     border: 1px solid var(--border);
     border-radius: 4px;
-    background: var(--bg);
+    background: var(--input-bg);
     color: var(--text-h);
     font: inherit;
   }
@@ -415,7 +394,7 @@
 .player-color-reset {
   min-height: 28px;
   padding: 4px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--secondary-button-border);
   border-radius: 4px;
   background: var(--secondary-button);
   color: inherit;
@@ -423,7 +402,6 @@
 
   &.active {
     outline: 2px solid var(--primary-button);
-    outline-offset: 1px;
   }
 }
 
@@ -435,7 +413,7 @@
   padding: 0;
   border: 2px solid var(--bg);
   border-radius: 50%;
-  box-shadow: 0 0 0 1px var(--border);
+  box-shadow: 0 0 0 1px var(--border), 0 2px 0 rgba(0, 0, 0, 0.22), 0 3px 5px rgba(0, 0, 0, 0.12);
   cursor: pointer;
 
   &.active {
@@ -449,7 +427,7 @@
 }
 
 .player-color-swatch[style*="#ffffff"] {
-  box-shadow: 0 0 0 1px #6b7280;
+  box-shadow: 0 0 0 1px #6b7280, 0 2px 0 rgba(0, 0, 0, 0.22), 0 3px 5px rgba(0, 0, 0, 0.12);
 }
 
 .player-custom-color {
@@ -494,7 +472,7 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--secondary-button-border);
   border-radius: 4px;
   background: var(--secondary-button);
   color: inherit;
@@ -523,16 +501,15 @@
   &.active {
     background: color-mix(in srgb, var(--primary-button) 15%, var(--secondary-button));
     outline: 2px solid var(--primary-button);
-    outline-offset: 1px;
   }
 }
 
 .player-decoration-option.half-left {
-  background: linear-gradient(to right, var(--preview-color) 50%, #fff 50%);
+  background: linear-gradient(to right, var(--preview-color) 50%, #ccc 50%);
 }
 
 .player-decoration-option.half-right {
-  background: linear-gradient(to right, #fff 50%, var(--preview-color) 50%);
+  background: linear-gradient(to right, #ccc 50%, var(--preview-color) 50%);
 }
 
 .player-decoration-option.vertical-line {
@@ -547,7 +524,7 @@
   font-size: 13px;
   padding: 6px 12px;
   border-radius: 6px;
-  border: 2px solid var(--border);
+  border: 2px solid var(--secondary-button-border);
   background: var(--secondary-button);
   color: var(--text-h);
   cursor: pointer;
@@ -664,7 +641,7 @@
   &.printer-friendly.offense,
   &.printer-friendly.defense {
     --team-color: #fff;
-    --decoration-color: #000;
+    --decoration-color: #555;
     --marker-text-color: #000;
     --marker-border-color: #000;
   }
@@ -684,13 +661,13 @@
   }
 
   &.half-left {
-    background: linear-gradient(to right, var(--marker-decoration-color, var(--decoration-color)) 50%, #fff 50%);
+    background: linear-gradient(to right, var(--marker-decoration-color, var(--decoration-color)) 50%, #ccc 50%);
     border-color: var(--marker-border-color, #fff);
     color: #111;
   }
 
   &.half-right {
-    background: linear-gradient(to right, #fff 50%, var(--marker-decoration-color, var(--decoration-color)) 50%);
+    background: linear-gradient(to right, #ccc 50%, var(--marker-decoration-color, var(--decoration-color)) 50%);
     border-color: var(--marker-border-color, #fff);
     color: #111;
   }
@@ -843,7 +820,7 @@
   box-shadow: var(--shadow);
 
   @media (prefers-color-scheme: dark) {
-    background: #1d1f26;
+    background: #112240;
   }
 
   h2 {
@@ -853,7 +830,7 @@
     margin: -24px -24px 0;
     padding: 18px 24px;
     border-radius: 9px 9px 0 0;
-    background: var(--primary-button);
+    background: var(--navy);
     color: #fff;
     font-size: 20px;
 
@@ -936,13 +913,13 @@
   font-size: 15px;
   padding: 8px 16px;
   border-radius: 6px;
-  border: 1px solid var(--primary-button);
+  border: 1px solid var(--secondary-button-border);
   background: var(--secondary-button);
   color: var(--text-h);
   cursor: pointer;
 
   &:hover {
-    border-color: var(--primary-button);
+    border-color: var(--accent-border);
   }
 }
 
@@ -963,11 +940,29 @@
 }
 
 .app-bar-brand {
-  font-family: var(--heading);
-  font-weight: 600;
-  font-size: 18px;
-  color: var(--app-bar-foreground);
+  display: flex;
+  align-items: center;
+  gap: 10px;
   white-space: nowrap;
+}
+
+.app-bar-logo {
+  display: block;
+  height: 36px;
+  width: auto;
+}
+
+.app-bar-wordmark {
+  font-family: var(--heading);
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: .5px;
+  color: #f3f4f6;
+}
+
+.app-bar-wordmark-accent {
+  font-weight: 600;
+  color: var(--accent);
 }
 
 .app-bar-nav {
@@ -1034,7 +1029,7 @@
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg);
+  background: var(--context-menu-bg);
   box-shadow: var(--shadow);
   z-index: 10;
 
@@ -1073,41 +1068,11 @@
 }
 
 .hero {
-  position: relative;
-
-  .base,
-  .framework,
-  .vite {
-    inset-inline: 0;
+  .hero-logo {
+    display: block;
+    width: 300px;
+    height: auto;
     margin: 0 auto;
-  }
-
-  .base {
-    width: 170px;
-    position: relative;
-    z-index: 0;
-  }
-
-  .framework,
-  .vite {
-    position: absolute;
-  }
-
-  .framework {
-    z-index: 1;
-    top: 34px;
-    height: 28px;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
-      scale(1.4);
-  }
-
-  .vite {
-    z-index: 0;
-    top: 107px;
-    height: 26px;
-    width: auto;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
-      scale(0.8);
   }
 }
 
@@ -1227,7 +1192,7 @@
   background: whitesmoke;
 
   @media (prefers-color-scheme: dark) {
-    --grid-chrome: #3f424b;
+    --grid-chrome: #172A45;
   }
 
   h1 {
@@ -1402,7 +1367,7 @@
   height: 36px;
   padding: 0;
   border-radius: 6px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--secondary-button-border);
   background: var(--secondary-button);
   color: var(--text-h);
   cursor: pointer;
@@ -1438,7 +1403,6 @@
     padding: 8px 12px;
     border-radius: 6px;
     border: none;
-    background: var(--secondary-button);
     color: var(--text);
     text-align: left;
     cursor: pointer;
@@ -1461,7 +1425,7 @@
   border: 1px solid var(--grid-chrome);
   border-top: none;
   border-bottom: none;
-  background: var(--secondary-button);
+  background: gray;
 
   @media (prefers-color-scheme: dark) {
     background: var(--secondary-button);
@@ -1475,7 +1439,7 @@
 
   th,
   td {
-    padding: 10px 16px;
+    padding: 6px 6px;
     text-align: left;
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
@@ -1503,13 +1467,13 @@
     border-bottom-color: #c4c8ce;
 
     @media (prefers-color-scheme: dark) {
-      background: #4b4e57;
-      border-bottom-color: #41444c;
+      background: #1d3557;
+      border-bottom-color: #233554;
     }
   }
 
   tbody td {
-    color: #35313b;
+    color: #1e293b;
   }
 
   tbody tr:last-child td {
@@ -1518,10 +1482,11 @@
 
   tbody tr {
     background: #fff;
+    transition: background-color 0.12s;
   }
 
   tbody tr:hover {
-    background: color-mix(in srgb, var(--primary-button) 10%, #fff);
+    background: #eaf4fd;
   }
 }
 
