@@ -1,2 +1,2 @@
-if (-not $env:PLAYBOOK_ID -or -not $env:SLIDE_ID) { throw "Set PLAYBOOK_ID and SLIDE_ID to existing IDs." }
-& (Join-Path $PSScriptRoot "..\Invoke-Api.ps1") -Method Patch -Path "/playbooks/$env:PLAYBOOK_ID/slides/$env:SLIDE_ID" -BodyPath (Join-Path $PSScriptRoot "sample-data.json")
+if (-not $env:PLAYBOOK_ID -or -not $env:PLAY_ID -or -not $env:SLIDE_ID) { throw "Set PLAYBOOK_ID, PLAY_ID, and SLIDE_ID to existing IDs." }
+& (Join-Path $PSScriptRoot "..\Invoke-Api.ps1") -Method Patch -Path "/playbooks/$env:PLAYBOOK_ID/plays/$env:PLAY_ID/slides/$env:SLIDE_ID" -BodyPath (Join-Path $PSScriptRoot "sample-data.json")

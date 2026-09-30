@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Search } from 'lucide-react'
+import { hashHue } from './CategoryBadge'
 
 const PAGE_SIZE = 50
 
@@ -9,7 +10,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [page, setPage] = useState(0)
-  const [category, setCategory] = useState('')
+  const [selectedCategories, setSelectedCategories] = useState([])
   const [searchName, setSearchName] = useState('')
   const [namePrefix, setNamePrefix] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
@@ -57,7 +58,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchRows({ category, namePrefix })
+    fetchRows({ namePrefix })
       .then((items) => {
         if (!cancelled) setRows(items)
       })
@@ -70,11 +71,17 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
     return () => {
       cancelled = true
     }
-  }, [fetchRows, refreshToken, category, namePrefix])
+  }, [fetchRows, refreshToken, namePrefix])
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  function toggleCategory(option) {
+    setSelectedCategories((current) => current.includes(option) ? current.filter((c) => c !== option) : [...current, option])
+    setPage(0)
+  }
+
+  const filteredRows = selectedCategories.length ? rows.filter((row) => selectedCategories.includes(row.category)) : rows
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages - 1)
-  const pageRows = rows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE)
+  const pageRows = filteredRows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE)
 
   const dropdownItems = [{ label: 'Refresh', onClick: () => setRefreshToken((t) => t + 1) }, ...menuItems]
 
@@ -115,16 +122,23 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
             />
           </label>
           {categoryOptions && (
-            <label className="data-grid-category-filter">
-              <span>Category</span>
-              <select value={category} onChange={(event) => {
-                setCategory(event.target.value)
-                setPage(0)
-              }}>
-                <option value="">All</option>
-                {categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-              </select>
-            </label>
+            <div className="data-grid-category-filter" role="group" aria-label="Filter by category">
+              {categoryOptions.map((option) => {
+                const active = selectedCategories.includes(option)
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`category-badge category-filter-badge${active ? ' is-active' : ''}`}
+                    style={{ '--badge-hue': hashHue(option) }}
+                    aria-pressed={active}
+                    onClick={() => toggleCategory(option)}
+                  >
+                    {option}
+                  </button>
+                )
+              })}
+            </div>
           )}
         </div>
         <div className="toolbar-menu" ref={menuRef}>
@@ -178,7 +192,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                 {pageRows.length === 0 && (
                   <tr>
                     <td className="data-grid-empty" colSpan={columns.length + (RowIcon ? 1 : 0) + (rowActions ? 1 : 0)}>
-                      {namePrefix ? `No ${title.toLowerCase()} match your search` : category ? `No ${title.toLowerCase()} in ${category}` : `No ${title.toLowerCase()} yet`}
+                      {namePrefix ? `No ${title.toLowerCase()} match your search` : selectedCategories.length ? `No ${title.toLowerCase()} in ${selectedCategories.join(', ')}` : `No ${title.toLowerCase()} yet`}
                     </td>
                   </tr>
                 )}
@@ -194,7 +208,9 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                       </td>
                     )}
                     {columns.map((column) => (
-                      <td key={column.key}>{column.render ? column.render(row[column.key], row) : row[column.key]}</td>
+                      <td key={column.key} className={column.key === 'name' ? 'data-grid-name-cell' : undefined}>
+                        {column.render ? column.render(row[column.key], row) : row[column.key]}
+                      </td>
                     ))}
                     {rowActions && (
                       <td className="data-grid-actions-cell">
@@ -255,9 +271,9 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
           </div>
           <div className="data-grid-pager">
             <span>
-              {rows.length === 0
+              {filteredRows.length === 0
                 ? '0 rows'
-                : `Rows ${currentPage * PAGE_SIZE + 1}-${Math.min(rows.length, (currentPage + 1) * PAGE_SIZE)} of ${rows.length}`}
+                : `Rows ${currentPage * PAGE_SIZE + 1}-${Math.min(filteredRows.length, (currentPage + 1) * PAGE_SIZE)} of ${filteredRows.length}`}
             </span>
             <div className="data-grid-pager-controls">
               <button type="button" disabled={currentPage === 0} onClick={() => setPage((p) => p - 1)}>

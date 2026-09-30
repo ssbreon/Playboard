@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { BookOpen, ClipboardList, Route, ScanSearch, Settings } from 'lucide-react'
 import { api } from './api'
+import { renderCategoryBadge } from './components/CategoryBadge'
 import { DataGrid } from './components/DataGrid'
 import { COLLECTION_CATEGORIES, NewCollectionDialog } from './components/NewCollectionDialog'
 import { NewPlayDialog, PLAY_CATEGORIES } from './components/NewPlayDialog'
 import { PlayDesigner } from './components/PlayDesigner'
+import { PrintPreviewDialog } from './components/PrintPreviewDialog'
 import { buildMarkersFromTemplate, PLAY_TEMPLATES } from './utils/formations'
 import { formatDate } from './utils/formatDate'
 import { themeLabel } from './utils/themes'
@@ -14,7 +16,7 @@ import './App.css'
 
 const GRID_COLUMNS = [
   { key: 'name', header: 'Name' },
-  { key: 'category', header: 'Category' },
+  { key: 'category', header: 'Category', render: renderCategoryBadge },
   { key: 'playCount', header: 'Plays' },
   { key: 'createdAt', header: 'Created', render: formatDate },
   { key: 'updatedAt', header: 'Date Modified', render: formatDate },
@@ -35,13 +37,13 @@ const GAME_PLAN_GRID_COLUMNS = [
 
 const PLAY_GRID_COLUMNS = [
   { key: 'name', header: 'Name' },
-  { key: 'category', header: 'Category' },
+  { key: 'category', header: 'Category', render: renderCategoryBadge },
   { key: 'createdAt', header: 'Created', render: formatDate },
   { key: 'updatedAt', header: 'Date Modified', render: formatDate },
   { key: 'theme', header: 'Theme', render: (value) => themeLabel(value) },
 ]
 
-function AppBar({ activeView, onNavigate }) {
+function AppBar({ activeView, onNavigate, user }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -66,7 +68,9 @@ function AppBar({ activeView, onNavigate }) {
         <img className="app-bar-logo" src="/blitzboard-mark.svg" alt="" aria-hidden="true" />
         <span className="app-bar-wordmark">BLITZBOARD <span className="app-bar-wordmark-accent">Studio</span></span>
       </div>
-      <nav className="app-bar-nav">
+      <nav className="app-bar-nav" aria-label="Primary navigation">
+        {user && (
+          <>
         <a
           href="#playbooks"
           className={`app-bar-link${activeView === 'playbooks' ? ' active' : ''}`}
@@ -81,13 +85,16 @@ function AppBar({ activeView, onNavigate }) {
         >
           Game Plans
         </a>
+          </>
+        )}
       </nav>
-      <div className="app-bar-account" ref={menuRef}>
+      {user && <div className="app-bar-account" ref={menuRef}>
         <button
           type="button"
           className="account-button"
           aria-haspopup="true"
           aria-expanded={menuOpen}
+          aria-label={`Account menu for ${user.name}`}
           onClick={() => setMenuOpen((open) => !open)}
         >
           <svg className="account-icon" viewBox="0 0 24 24" role="presentation" aria-hidden="true">
@@ -99,17 +106,20 @@ function AppBar({ activeView, onNavigate }) {
         </button>
         {menuOpen && (
           <div className="account-menu" role="menu">
+            <div className="account-menu-identity">
+              <strong>{user.name}</strong>
+              <span>{user.roles.join(', ')}</span>
+            </div>
             <a href="#profile" role="menuitem">Profile</a>
             <a href="#settings" role="menuitem">Settings</a>
-            <a href="#sign-out" role="menuitem">Sign out</a>
           </div>
         )}
-      </div>
+      </div>}
     </header>
   )
 }
 
-function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, updateParent, title, rowIcon, rowType, fetchRows, onBack, onNew, newLabel, onOpenPlay, rowActions }) {
+function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, updateParent, title, rowIcon, rowType, fetchRows, onBack, onNew, newLabel, onOpenPlay, onPrintAll, rowActions }) {
   const [name, setName] = useState(parentRecord.name)
   const [savedName, setSavedName] = useState(parentRecord.name)
   const [category, setCategory] = useState(parentRecord.category || 'Defense')
@@ -278,6 +288,7 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
         fetchRows={fetchRows}
         onNew={onNew}
         newLabel={newLabel}
+        menuItems={[{ label: `Print ${parentLabel}...`, onClick: onPrintAll }]}
         onRowDoubleClick={onOpenPlay}
         rowActions={rowActions}
       />
@@ -291,8 +302,12 @@ function App() {
   const [designer, setDesigner] = useState(null)
   const [newDialog, setNewDialog] = useState(null)
   const [newCollection, setNewCollection] = useState(null)
+  const [printPlay, setPrintPlay] = useState(null)
+  const [printCollection, setPrintCollection] = useState(null)
   const [count, setCount] = useState(0)
   const [apiStatus, setApiStatus] = useState('Connecting to API...')
+  const [authUser, setAuthUser] = useState(null)
+  const [authError, setAuthError] = useState(null)
   const [playbookCount, setPlaybookCount] = useState(0)
   const [playbooksReloadToken, setPlaybooksReloadToken] = useState(0)
   const [gamePlansReloadToken, setGamePlansReloadToken] = useState(0)
@@ -300,12 +315,16 @@ function App() {
   const [scoutPlaysReloadToken, setScoutPlaysReloadToken] = useState(0)
 
   useEffect(() => {
-    Promise.all([api.health(), api.listPlaybooks()])
-      .then(([health, playbooks]) => {
+    Promise.all([api.health(), api.me(), api.listPlaybooks()])
+      .then(([health, user, playbooks]) => {
+        setAuthUser(user)
         setApiStatus(`${health.service}: ${health.status}`)
         setPlaybookCount(playbooks.items.length)
       })
-      .catch((error) => setApiStatus(`API unavailable: ${error.message}`))
+      .catch((error) => {
+        setAuthError(error.message)
+        setApiStatus(`API unavailable: ${error.message}`)
+      })
   }, [])
 
   async function handleCreateCollection(payload) {
@@ -335,8 +354,7 @@ function App() {
     }
   }
 
-  async function handleDeleteCollection(kind, row) {
-    if (!window.confirm(`Delete "${row.name}"?`)) return
+  async function handleDeleteCollection(kind, row) {    if (!window.confirm(`Delete "${row.name}"?`)) return
     if (kind === 'playbook') {
       await api.deletePlaybook(row.id)
       setPlaybooksReloadToken((t) => t + 1)
@@ -346,10 +364,16 @@ function App() {
     }
   }
 
+  async function handlePrintCollection(kind, row) {
+    const result = kind === 'playbook' ? await api.listPlays(row.id) : await api.listScoutPlays(row.id)
+    setPrintCollection({ collection: { ...row, kind }, plays: result.items })
+  }
+
   function collectionRowActions(kind) {
     return (row) => [
       { key: 'open', label: 'Open', onClick: (item) => setParent({ ...item, kind }) },
       { key: 'copy', label: 'Copy', onClick: (item) => handleCopyCollection(kind, item) },
+      { key: 'print', label: 'Print...', onClick: (item) => handlePrintCollection(kind, item) },
       { key: 'delete', label: 'Delete', destructive: true, onClick: (item) => handleDeleteCollection(kind, item) },
     ]
   }
@@ -357,17 +381,27 @@ function App() {
   async function handleCreatePlay(name, templateId, theme, category, fieldDecoration, fieldOrientation) {
     const { target, parentId } = newDialog
     setNewDialog(null)
+    const template = PLAY_TEMPLATES.find((t) => t.id === templateId) || PLAY_TEMPLATES[0]
+    const initialMarkers = buildMarkersFromTemplate(template)
     const record =
       target === 'play'
-        ? await api.createPlay(parentId, { name, template: templateId, theme, category, fieldDecoration, fieldOrientation })
+        ? await api.createPlay(parentId, {
+            name,
+            template: templateId,
+            theme,
+            category,
+            fieldDecoration,
+            fieldOrientation,
+            markers: initialMarkers,
+          })
         : await api.createScoutPlay(parentId, { name, template: templateId, theme, category, fieldDecoration, fieldOrientation })
-    const template = PLAY_TEMPLATES.find((t) => t.id === templateId) || PLAY_TEMPLATES[0]
     setDesigner({
       kind: target,
       parentId,
       id: record.id,
       name: record.name,
-      initialMarkers: buildMarkersFromTemplate(template),
+      initialMarkers: record.markers || initialMarkers,
+      initialDrawings: record.drawings,
       initialTextAnnotations: record.textAnnotations,
       initialTheme: record.theme,
       template: record.template,
@@ -431,14 +465,28 @@ function App() {
     return (row) => [
       { key: 'open', label: 'Open', onClick: (r) => openDesignerForRow(kind, parentId, r) },
       { key: 'copy', label: 'Copy', onClick: (r) => handleCopyPlay(kind, parentId, r) },
+      { key: 'print', label: 'Print...', onClick: (r) => setPrintPlay(r) },
       { key: 'delete', label: 'Delete', destructive: true, onClick: (r) => handleDeletePlay(kind, parentId, r) },
     ]
+  }
+
+  if (!authUser) {
+    return (
+      <>
+        <AppBar activeView={view} onNavigate={() => {}} user={null} />
+        <main className="auth-state" aria-live="polite">
+          <h1>{authError ? 'Unable to sign in' : 'Signing in...'}</h1>
+          {authError && <p>{authError}</p>}
+        </main>
+      </>
+    )
   }
 
   return (
     <>
       <AppBar
         activeView={view}
+        user={authUser}
         onNavigate={(nextView) => {
           setDesigner(null)
           setParent(null)
@@ -462,6 +510,14 @@ function App() {
           onCreate={handleCreateCollection}
         />
       )}
+      {printPlay && <PrintPreviewDialog play={printPlay} onClose={() => setPrintPlay(null)} />}
+      {printCollection && (
+        <PrintPreviewDialog
+          plays={printCollection.plays}
+          collection={printCollection.collection}
+          onClose={() => setPrintCollection(null)}
+        />
+      )}
 
       {designer ? (
         <PlayDesigner
@@ -479,11 +535,12 @@ function App() {
           title="Plays"
           rowIcon={Route}
           rowType="Play"
-          fetchRows={({ category, namePrefix }) => api.listPlays(parent.id, category, namePrefix).then((result) => result.items)}
+          fetchRows={({ namePrefix }) => api.listPlays(parent.id, undefined, namePrefix).then((result) => result.items)}
           onNew={() => setNewDialog({ target: 'play', parentId: parent.id })}
           newLabel="New Play"
           onBack={() => setParent(null)}
           onOpenPlay={(row) => openDesignerForRow('play', parent.id, row)}
+          onPrintAll={() => handlePrintCollection('playbook', parent)}
           rowActions={playRowActions('play', parent.id)}
         />
       ) : parent?.kind === 'gamePlan' ? (
@@ -496,11 +553,12 @@ function App() {
           title="Scout Plays"
           rowIcon={ScanSearch}
           rowType="Scout Play"
-          fetchRows={({ category, namePrefix }) => api.listScoutPlays(parent.id, category, namePrefix).then((result) => result.items)}
+          fetchRows={({ namePrefix }) => api.listScoutPlays(parent.id, undefined, namePrefix).then((result) => result.items)}
           onNew={() => setNewDialog({ target: 'scoutPlay', parentId: parent.id })}
           newLabel="New Scout Play"
           onBack={() => setParent(null)}
           onOpenPlay={(row) => openDesignerForRow('scoutPlay', parent.id, row)}
+          onPrintAll={() => handlePrintCollection('gamePlan', parent)}
           rowActions={playRowActions('scoutPlay', parent.id)}
         />
       ) : (
@@ -513,7 +571,7 @@ function App() {
           rowIcon={BookOpen}
           rowType="Playbook"
           categoryOptions={COLLECTION_CATEGORIES}
-          fetchRows={({ category, namePrefix }) => api.listPlaybooks(category, namePrefix).then((result) => result.items)}
+          fetchRows={({ namePrefix }) => api.listPlaybooks(undefined, namePrefix).then((result) => result.items)}
           onNew={() => setNewCollection('playbook')}
           newLabel="New Playbook"
           rowActions={collectionRowActions('playbook')}
@@ -529,7 +587,7 @@ function App() {
           rowIcon={ClipboardList}
           rowType="Game Plan"
           categoryOptions={COLLECTION_CATEGORIES}
-          fetchRows={({ category, namePrefix }) => api.listGamePlans(category, namePrefix).then((result) => result.items)}
+          fetchRows={({ namePrefix }) => api.listGamePlans(undefined, namePrefix).then((result) => result.items)}
           onNew={() => setNewCollection('gamePlan')}
           newLabel="New Game Plan"
           rowActions={collectionRowActions('gamePlan')}
@@ -541,7 +599,7 @@ function App() {
         <>
       <section id="center">
         <div className="hero">
-          <img src="/blitzboardstudio.png" className="hero-logo" width="300" alt="BLITZBOARD Studio logo" />
+          <img src="/blitzboardstudio.png" className="hero-logo" alt="BLITZBOARD Studio logo" />
         </div>
         <div>
           <h1>Get started</h1>
@@ -560,87 +618,6 @@ function App() {
       </section>
 
       <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
 
       <div className="ticks"></div>
       <section id="spacer"></section>

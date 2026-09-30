@@ -1,37 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
+import { Check, Pencil, Plus, X } from 'lucide-react'
 import { api } from '../api'
 import { FIELD_DECORATIONS, FIELD_ORIENTATIONS, PLAY_CATEGORIES } from './NewPlayDialog'
+import { PrintPreviewDialog } from './PrintPreviewDialog'
 import { PLAY_TEMPLATES, buildMarkersFromTemplate } from '../utils/formations'
 import { PLAY_THEMES, getTheme, normalizeThemeId } from '../utils/themes'
-
-// Fixed on-screen size (px) for the block tool's perpendicular endcap, independent of field scaling.
-const TBAR_LENGTH_PX = 12
-const TBAR_THICKNESS_PX = 3
-
-// Fixed on-screen size (px) for route/blitz/coverage arrowheads, independent of field scaling.
-const ARROW_LENGTH_PX = 9
-const ARROW_WIDTH_PX = 11
-const BLITZ_FIRST_SEGMENT_DASH = '6 4'
-
-const FIELD_WIDTH_FEET = 160
-const SIDELINE_HASH_MARK_PERCENT = 1.5
-const HASH_MARK_DISTANCE_FEET = {
-  'High School': 53 + 4 / 12,
-  NCAA: 60,
-  NFL: 70 + 9 / 12,
-}
-const HASH_MARK_Y_POSITIONS = Array.from({ length: 8 }, (_, band) =>
-  [2.5, 5, 7.5, 10].map((offset) => band * 12.5 + offset),
-).flat()
-
-const DRAWING_TOOLS = [
-  { id: 'select', label: 'Select' },
-  { id: 'block', label: 'Block', color: '#f59e0b', dash: null, arrow: false, endCap: 'tbar' },
-  { id: 'dtb', label: 'DTB', color: '#f59e0b', dash: '2 4', arrow: false, endCap: 'tbar' },
-  { id: 'route', label: 'Route', color: '#1d4ed8', dash: null, arrow: true },
-  { id: 'blitz', label: 'Blitz', color: '#b91c1c', dash: null, arrow: true },
-  { id: 'coverage', label: 'Coverage', color: '#7c3aed', dash: '2 4', arrow: true },
-]
+import {
+  BLITZ_FIRST_SEGMENT_DASH,
+  DRAWING_TOOLS,
+  HASH_MARK_Y_POSITIONS,
+  TBAR_THICKNESS_PX,
+  arrowCapPoints,
+  drawingAnchor as resolveDrawingAnchor,
+  flattenDrawings,
+  hashMarkXPositions,
+  markerStyleVars,
+  normalizeDrawings,
+  normalizeTextAnnotations,
+  pathData,
+  tbarCapPoints,
+  textAnnotationStyle,
+  textAnnotationWidth,
+  toolColor as resolveToolColor,
+  toolDash as resolveToolDash,
+} from '../utils/playGeometry'
 
 const TOOL_ICONS = {
   select: <path fill="currentColor" d="M6 3v18l4.6-4.6L13.2 21l2.6-1.4-2.6-4.6L18 13.4z" />,
@@ -41,8 +33,6 @@ const TOOL_ICONS = {
   blitz: <path stroke="currentColor" strokeWidth="2" fill="none" strokeDasharray="4 3" strokeLinecap="round" d="M4 20 20 4" />,
   coverage: <path stroke="currentColor" strokeWidth="2" fill="none" strokeDasharray="1 4" strokeLinecap="round" d="M4 12h16" />,
 }
-
-const EMPTY_DRAWINGS = { block: [], dtb: [], route: [], blitz: [], coverage: [] }
 
 const PLAYER_COLORS = ['#ffffff', '#1d4ed8', '#b91c1c', '#15803d', '#f59e0b', '#7c3aed', '#374151']
 const TEXT_FONT_SIZES = [12, 14, 16, 20, 24, 32]
@@ -58,13 +48,19 @@ const PLAYER_DECORATIONS = [
   { id: 'half-right', label: 'Right half' },
   { id: 'vertical-line', label: 'Vertical line' },
 ]
+const MAX_ADJUSTMENT_SLIDES = 3
 
-function normalizeDrawings(source) {
-  return { ...EMPTY_DRAWINGS, ...(source || {}) }
-}
-
-function normalizeTextAnnotations(source) {
-  return Array.isArray(source) ? source : []
+function adjustmentDesign(slide, fallback) {
+  return {
+    markers: Array.isArray(slide.markers) ? slide.markers : fallback.markers,
+    drawings: normalizeDrawings(slide.drawings || fallback.drawings),
+    textAnnotations: normalizeTextAnnotations(slide.textAnnotations || fallback.textAnnotations),
+    templateId: slide.template || fallback.templateId,
+    category: slide.category || fallback.category,
+    fieldDecoration: slide.fieldDecoration || fallback.fieldDecoration,
+    fieldOrientation: slide.fieldOrientation || fallback.fieldOrientation,
+    theme: normalizeThemeId(slide.theme || fallback.theme),
+  }
 }
 
 export function PlayDesigner({ record, onClose }) {
@@ -73,17 +69,6 @@ export function PlayDesigner({ record, onClose }) {
   const initialFieldDecoration = record.fieldDecoration || FIELD_DECORATIONS[0]
   const initialFieldOrientation = record.fieldOrientation || FIELD_ORIENTATIONS[0]
   const initialTheme = normalizeThemeId(record.initialTheme)
-  const original = useRef({
-    name: record.name,
-    markers: record.initialMarkers || [],
-    drawings: normalizeDrawings(record.initialDrawings),
-    textAnnotations: normalizeTextAnnotations(record.initialTextAnnotations),
-    templateId: initialTemplateId,
-    category: initialCategory,
-    fieldDecoration: initialFieldDecoration,
-    fieldOrientation: initialFieldOrientation,
-    theme: initialTheme,
-  })
   const [name, setName] = useState(record.name)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -109,6 +94,7 @@ export function PlayDesigner({ record, onClose }) {
     const [editingTextId, setEditingTextId] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [printOpen, setPrintOpen] = useState(false)
   const [draftTemplateId, setDraftTemplateId] = useState(initialTemplateId)
   const [draftCategory, setDraftCategory] = useState(initialCategory)
   const [draftFieldDecoration, setDraftFieldDecoration] = useState(initialFieldDecoration)
@@ -123,20 +109,21 @@ export function PlayDesigner({ record, onClose }) {
   const [savedFieldDecoration, setSavedFieldDecoration] = useState(initialFieldDecoration)
   const [savedFieldOrientation, setSavedFieldOrientation] = useState(initialFieldOrientation)
   const [savedTheme, setSavedTheme] = useState(initialTheme)
+  const [slides, setSlides] = useState([])
+  const [slidesLoadError, setSlidesLoadError] = useState(false)
+  const [slideDraftTitles, setSlideDraftTitles] = useState({})
+  const [slidesLoading, setSlidesLoading] = useState(record.kind === 'play')
+  const [activeSlideId, setActiveSlideId] = useState(null)
+  const [activeSlideTitle, setActiveSlideTitle] = useState('')
+  const [editingSlideId, setEditingSlideId] = useState(null)
+  const [removingSlideId, setRemovingSlideId] = useState(null)
+  const slideDraftsRef = useRef({})
   const fieldRef = useRef(null)
   const menuRef = useRef(null)
-  const textMeasureCanvas = useRef(null)
   const [fieldPxSize, setFieldPxSize] = useState({ width: 100, height: 100 })
   const activeTheme = getTheme(theme)
   const themeClass = activeTheme.fieldClass ? ` ${activeTheme.fieldClass}` : ''
-  const hashDistanceFeet = HASH_MARK_DISTANCE_FEET[fieldOrientation] || HASH_MARK_DISTANCE_FEET['High School']
-  const hashDistancePercent = (hashDistanceFeet / FIELD_WIDTH_FEET) * 100
-  const hashMarkXPositions = [
-    SIDELINE_HASH_MARK_PERCENT,
-    hashDistancePercent,
-    100 - hashDistancePercent,
-    100 - SIDELINE_HASH_MARK_PERCENT,
-  ]
+  const hashXPositions = hashMarkXPositions(fieldOrientation)
 
   useEffect(() => {
     const el = fieldRef.current
@@ -150,6 +137,31 @@ export function PlayDesigner({ record, onClose }) {
   }, [])
 
   useEffect(() => {
+    if (record.kind !== 'play') return undefined
+    let cancelled = false
+    api.listSlides(record.parentId, record.id)
+      .then((result) => {
+        if (!cancelled) {
+          const items = result.items || []
+          setSlides(items)
+          setSlideDraftTitles(Object.fromEntries(items.map((slide) => [slide.id, slide.title || 'Adjustment'])))
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setSlidesLoadError(true)
+          setError(`Unable to load adjustments: ${err.message}`)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSlidesLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [record.kind, record.parentId, record.id])
+
+  useEffect(() => {
     function handleClickOutside(event) {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setMenuOpen(false)
@@ -159,26 +171,81 @@ export function PlayDesigner({ record, onClose }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const isDirty =
-    name !== savedName ||
-    JSON.stringify(markers) !== JSON.stringify(savedMarkers) ||
-    JSON.stringify(drawings) !== JSON.stringify(savedDrawings) ||
-    JSON.stringify(textAnnotations) !== JSON.stringify(savedTextAnnotations) ||
-    templateId !== savedTemplateId ||
-    category !== savedCategory ||
-    fieldDecoration !== savedFieldDecoration ||
-    fieldOrientation !== savedFieldOrientation ||
-    theme !== savedTheme
+  const activeSlide = slides.find((slide) => slide.id === activeSlideId)
+  const isReadOnly = record.kind === 'play' && !activeSlideId && slides.length === 0
+  const savedBaseDesign = {
+    markers: savedMarkers,
+    drawings: savedDrawings,
+    textAnnotations: savedTextAnnotations,
+    templateId: savedTemplateId,
+    category: savedCategory,
+    fieldDecoration: savedFieldDecoration,
+    fieldOrientation: savedFieldOrientation,
+    theme: savedTheme,
+  }
+  const savedActiveDesign = activeSlide ? adjustmentDesign(activeSlide, savedBaseDesign) : savedBaseDesign
+  const currentDesign = { markers, drawings, textAnnotations, templateId, category, fieldDecoration, fieldOrientation, theme }
+  const designIsDirty = Object.keys(currentDesign).some(
+    (key) => JSON.stringify(currentDesign[key]) !== JSON.stringify(savedActiveDesign[key]),
+  )
+  const isDirty = activeSlideId
+    ? designIsDirty || activeSlideTitle !== (activeSlide?.title || 'Adjustment')
+    : name !== savedName || designIsDirty
 
   const canUndoDrawing =
     isDirty && drawHistory.some((entry) => (drawings[entry.type] || []).some((drawing) => drawing.id === entry.id))
+
+  function captureCurrentDraft() {
+    return { ...currentDesign, name, title: activeSlideTitle }
+  }
+
+  function restoreDesign(design) {
+    setMarkers(design.markers)
+    setDrawings(normalizeDrawings(design.drawings))
+    setTextAnnotations(normalizeTextAnnotations(design.textAnnotations))
+    setTemplateId(design.templateId)
+    setCategory(design.category)
+    setFieldDecoration(design.fieldDecoration)
+    setFieldOrientation(design.fieldOrientation)
+    setTheme(design.theme)
+    setSelectedId(null)
+    setSelectedDrawing(null)
+    setSelectedTextId(null)
+    setEditingTextId(null)
+    setActiveTool('select')
+    setHoveredBlockCapId(null)
+    setActiveChain(null)
+    setCursorPos(null)
+    setDrawHistory([])
+  }
+
+  function activateSlide(slideId) {
+    if (slideId === activeSlideId) return
+    slideDraftsRef.current[activeSlideId || 'base'] = captureCurrentDraft()
+    setActiveSlideId(slideId)
+    setEditingSlideId(null)
+    const slide = slides.find((item) => item.id === slideId)
+    const draft = slideDraftsRef.current[slideId || 'base']
+    if (draft) {
+      restoreDesign(draft)
+      if (!slideId) setName(draft.name ?? savedName)
+      setActiveSlideTitle(slideId ? draft.title || slide?.title || 'Adjustment' : '')
+      if (slideId) setSlideDraftTitles((current) => ({ ...current, [slideId]: draft.title || slide?.title || 'Adjustment' }))
+    } else if (slideId && slide) {
+      restoreDesign(adjustmentDesign(slide, savedBaseDesign))
+      setActiveSlideTitle(slide.title || 'Adjustment')
+    } else {
+      restoreDesign(savedBaseDesign)
+      setName(savedName)
+      setActiveSlideTitle('')
+    }
+  }
 
   async function handleSave() {
     setSaving(true)
     setError(null)
     try {
-      const payload = {
-        name,
+      const designPayload = {
         markers,
         drawings,
         textAnnotations,
@@ -188,45 +255,111 @@ export function PlayDesigner({ record, onClose }) {
         fieldOrientation,
         theme,
       }
-      if (record.kind === 'play') {
-        await api.updatePlay(record.parentId, record.id, payload)
+      if (activeSlideId) {
+        const title = activeSlideTitle.trim() || activeSlide?.title || 'Adjustment'
+        const updated = await api.updateSlide(record.parentId, record.id, activeSlideId, { ...designPayload, title })
+        setSlides((current) => current.map((slide) => (slide.id === activeSlideId ? { ...slide, ...updated } : slide)))
+        setActiveSlideTitle(title)
+        setSlideDraftTitles((current) => ({ ...current, [activeSlideId]: title }))
       } else {
-        await api.updateScoutPlay(record.parentId, record.id, payload)
+        const payload = { ...designPayload, name }
+        if (record.kind === 'play') {
+          await api.updatePlay(record.parentId, record.id, payload)
+        } else {
+          await api.updateScoutPlay(record.parentId, record.id, payload)
+        }
+        setSavedName(name)
+        setSavedMarkers(markers)
+        setSavedDrawings(drawings)
+        setSavedTextAnnotations(textAnnotations)
+        setSavedTemplateId(templateId)
+        setSavedCategory(category)
+        setSavedFieldDecoration(fieldDecoration)
+        setSavedFieldOrientation(fieldOrientation)
+        setSavedTheme(theme)
       }
-      setSavedName(name)
-      setSavedMarkers(markers)
-      setSavedDrawings(drawings)
-      setSavedTextAnnotations(textAnnotations)
-      setSavedTemplateId(templateId)
-      setSavedCategory(category)
-      setSavedFieldDecoration(fieldDecoration)
-      setSavedFieldOrientation(fieldOrientation)
-      setSavedTheme(theme)
+      delete slideDraftsRef.current[activeSlideId || 'base']
     } catch (err) {
-      setError(err.message)
+      setError(`Unable to save: ${err.message}`)
     } finally {
       setSaving(false)
     }
   }
 
   function handleCancel() {
-    setName(original.current.name)
-    setMarkers(original.current.markers)
-    setDrawings(original.current.drawings)
-    setTextAnnotations(original.current.textAnnotations)
-    setTemplateId(original.current.templateId)
-    setCategory(original.current.category)
-    setFieldDecoration(original.current.fieldDecoration)
-    setFieldOrientation(original.current.fieldOrientation)
-    setTheme(original.current.theme)
-    setSelectedId(null)
-    setSelectedDrawing(null)
-    setSelectedTextId(null)
-    setEditingTextId(null)
-    setActiveChain(null)
-    setCursorPos(null)
-    setDrawHistory([])
+    delete slideDraftsRef.current[activeSlideId || 'base']
+    if (activeSlideId && activeSlide) {
+      restoreDesign(adjustmentDesign(activeSlide, savedBaseDesign))
+      setActiveSlideTitle(activeSlide.title || 'Adjustment')
+      setSlideDraftTitles((current) => ({ ...current, [activeSlideId]: activeSlide.title || 'Adjustment' }))
+    } else {
+      restoreDesign(savedBaseDesign)
+      setName(savedName)
+    }
     setError(null)
+  }
+
+  async function handleAddAdjustment() {
+    if (record.kind !== 'play' || slides.length >= MAX_ADJUSTMENT_SLIDES || slidesLoading || slidesLoadError) return
+    setSaving(true)
+    setError(null)
+    const currentDraft = captureCurrentDraft()
+    slideDraftsRef.current[activeSlideId || 'base'] = currentDraft
+    try {
+      let sequence = 1
+      const titles = new Set(slides.map((slide) => slide.title))
+      while (titles.has(`Adjustment ${sequence}`)) sequence += 1
+      const title = `Adjustment ${sequence}`
+      const created = await api.createSlide(record.parentId, record.id, {
+        markers,
+        drawings,
+        textAnnotations,
+        template: templateId,
+        category,
+        fieldDecoration,
+        fieldOrientation,
+        theme,
+        title,
+      })
+      setSlides((current) => [...current, created])
+      setSlideDraftTitles((current) => ({ ...current, [created.id]: created.title || title }))
+      setActiveSlideId(created.id)
+      setActiveSlideTitle(created.title || title)
+      restoreDesign(adjustmentDesign(created, currentDesign))
+    } catch (err) {
+      setError(`Unable to add adjustment: ${err.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDeleteAdjustment(slide) {
+    if (!window.confirm(`Delete "${slide.title || 'Adjustment'}"? This cannot be undone.`)) return
+    setRemovingSlideId(slide.id)
+    setError(null)
+    try {
+      await api.deleteSlide(record.parentId, record.id, slide.id)
+      setSlides((current) => current.filter((item) => item.id !== slide.id))
+      setSlideDraftTitles((current) => {
+        const next = { ...current }
+        delete next[slide.id]
+        return next
+      })
+      delete slideDraftsRef.current[slide.id]
+      if (activeSlideId === slide.id) {
+        const baseDraft = slideDraftsRef.current.base
+        setActiveSlideId(null)
+        setActiveSlideTitle('')
+        setEditingSlideId(null)
+        restoreDesign(baseDraft || savedBaseDesign)
+        setName(baseDraft?.name ?? savedName)
+        delete slideDraftsRef.current.base
+      }
+    } catch (err) {
+      setError(`Unable to delete adjustment: ${err.message}`)
+    } finally {
+      setRemovingSlideId(null)
+    }
   }
 
   function undoLastDrawing() {
@@ -338,6 +471,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleTextPointerDown(event, id) {
+    if (isReadOnly) return
     event.stopPropagation()
     const annotation = textAnnotations.find((item) => item.id === id)
     const fieldRect = fieldRef.current?.getBoundingClientRect()
@@ -365,42 +499,12 @@ export function PlayDesigner({ record, onClose }) {
     )
   }
 
-  function textAnnotationStyle(annotation) {
-    return {
-      color: annotation.color,
-      fontSize: annotation.fontSize ? `${annotation.fontSize}px` : undefined,
-      fontWeight: annotation.bold ? 700 : undefined,
-      fontStyle: annotation.italic ? 'italic' : undefined,
-      textDecoration: annotation.underline ? 'underline' : undefined,
-    }
-  }
-
-  function textAnnotationWidth(annotation) {
-    const text = annotation.text
-    if (!textMeasureCanvas.current) {
-      textMeasureCanvas.current = document.createElement('canvas')
-    }
-    const context = textMeasureCanvas.current.getContext('2d')
-    const field = fieldRef.current
-    if (!context || !field) return 150
-    const style = window.getComputedStyle(field)
-    const fontSize = annotation.fontSize ? `${annotation.fontSize}px` : style.fontSize
-    context.font = `${annotation.italic ? 'italic ' : ''}${annotation.bold ? '700 ' : ''}${fontSize} ${style.fontFamily}`
-    return Math.max(134, Math.ceil(context.measureText(text || 'Enter text').width))
-  }
-
   function drawingAnchor(drawing) {
-    if (drawing.blockId) {
-      const block = drawings.block.find((item) => item.id === drawing.blockId)
-      const player = block && markers.find((marker) => marker.id === block.anchorId)
-      const end = block?.points.at(-1)
-      return player && end ? { x: player.x + end.dx, y: player.y + end.dy } : null
-    }
-    return markers.find((marker) => marker.id === drawing.anchorId)
+    return resolveDrawingAnchor(drawing, drawings, markers)
   }
 
   function handleMarkerPointerDown(event, id) {
-    if (activeTool !== 'select') return
+    if (isReadOnly || activeTool !== 'select') return
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     setSelectedId(id)
@@ -411,6 +515,7 @@ export function PlayDesigner({ record, onClose }) {
 
   function handleMarkerClick(event, id) {
     event.stopPropagation()
+    if (isReadOnly) return
     if (activeTool === 'select' || activeTool === 'dtb' || activeChain) return
     setActiveChain({ type: activeTool, anchorId: id, points: [] })
     setSelectedDrawing(null)
@@ -442,7 +547,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleDrawingClick(event, type, id) {
-    if (activeTool !== 'select') return
+    if (isReadOnly || activeTool !== 'select') return
     event.stopPropagation()
     setSelectedDrawing({ type, id })
     setSelectedId(null)
@@ -450,6 +555,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleBlockCapClick(event, drawing) {
+    if (isReadOnly) return
     if (activeTool !== 'dtb' || activeChain) {
       handleDrawingClick(event, 'block', drawing.id)
       return
@@ -461,6 +567,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleFieldClick(event) {
+    if (isReadOnly) return
     if (activeTool === 'select') {
       // Marker/drawing clicks stop propagation, so reaching here means empty field was clicked.
       setSelectedId(null)
@@ -481,7 +588,7 @@ export function PlayDesigner({ record, onClose }) {
 
   function handleFieldDoubleClick(event) {
     event.preventDefault()
-    if (activeTool === 'select' || !activeChain) return
+    if (isReadOnly || activeTool === 'select' || !activeChain) return
     const points = activeChain.points.length > 0 ? activeChain.points.slice(0, -1) : activeChain.points
     if (points.length > 0) {
       const newDrawing = activeChain.type === 'dtb'
@@ -495,6 +602,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleFieldPointerMove(event) {
+    if (isReadOnly) return
     if (dragId) {
       const { x, y } = positionFromEvent(event)
       setMarkers((current) => current.map((marker) => (marker.id === dragId ? { ...marker, x, y } : marker)))
@@ -522,6 +630,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleKeyDown(event) {
+    if (isReadOnly) return
     if (event.key === 'Escape' && activeChain) {
       setActiveChain(null)
       setCursorPos(null)
@@ -554,77 +663,31 @@ export function PlayDesigner({ record, onClose }) {
       setEditingTextId(null)
     }
   }
-  function pathData(points) {
-    return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+  function tbarCap(points) {
+    return tbarCapPoints(points, fieldPxSize)
   }
 
-  // Computes a perpendicular cap segment (in field percent coordinates) that renders as a
-  // fixed-length, fixed-thickness line on screen regardless of the field's aspect ratio.
-  function tbarCapPoints(points) {
-    if (points.length < 2) return null
-    const end = points[points.length - 1]
-    const prev = points[points.length - 2]
-    const scaleX = fieldPxSize.width / 100
-    const scaleY = fieldPxSize.height / 100
-    const dxPx = (end.x - prev.x) * scaleX
-    const dyPx = (end.y - prev.y) * scaleY
-    const len = Math.hypot(dxPx, dyPx)
-    if (len === 0) return null
-    const perpXPx = (-dyPx / len) * (TBAR_LENGTH_PX / 2)
-    const perpYPx = (dxPx / len) * (TBAR_LENGTH_PX / 2)
-    return {
-      x1: end.x + perpXPx / scaleX,
-      y1: end.y + perpYPx / scaleY,
-      x2: end.x - perpXPx / scaleX,
-      y2: end.y - perpYPx / scaleY,
-    }
-  }
-
-  // Computes an arrowhead triangle (in field percent coordinates) that renders at a fixed
-  // on-screen size regardless of the field's aspect ratio.
-  function arrowCapPoints(points) {
-    if (points.length < 2) return null
-    const end = points[points.length - 1]
-    const prev = points[points.length - 2]
-    const scaleX = fieldPxSize.width / 100
-    const scaleY = fieldPxSize.height / 100
-    const endPx = { x: end.x * scaleX, y: end.y * scaleY }
-    const prevPx = { x: prev.x * scaleX, y: prev.y * scaleY }
-    const dxPx = endPx.x - prevPx.x
-    const dyPx = endPx.y - prevPx.y
-    const len = Math.hypot(dxPx, dyPx)
-    if (len === 0) return null
-    const dirX = dxPx / len
-    const dirY = dyPx / len
-    const backX = endPx.x - dirX * ARROW_LENGTH_PX
-    const backY = endPx.y - dirY * ARROW_LENGTH_PX
-    const perpX = -dirY * (ARROW_WIDTH_PX / 2)
-    const perpY = dirX * (ARROW_WIDTH_PX / 2)
-    const toPercent = (px, py) => `${px / scaleX},${py / scaleY}`
-    return [
-      toPercent(endPx.x, endPx.y),
-      toPercent(backX + perpX, backY + perpY),
-      toPercent(backX - perpX, backY - perpY),
-    ].join(' ')
+  function arrowCap(points) {
+    return arrowCapPoints(points, fieldPxSize)
   }
 
   function toolColor(tool) {
-    return activeTheme.strokeColor || tool.color
+    return resolveToolColor(tool, activeTheme)
   }
 
   function toolDash(tool) {
-    return activeTheme.toolDash && tool.id in activeTheme.toolDash ? activeTheme.toolDash[tool.id] : tool.dash
+    return resolveToolDash(tool, activeTheme)
   }
 
-  const allDrawings = Object.entries(drawings).flatMap(([type, list]) => list.map((drawing) => ({ ...drawing, type })))
+  const allDrawings = flattenDrawings(drawings)
   const chainAnchor = activeChain ? drawingAnchor(activeChain) : null
   const selectedMarker = markers.find((marker) => marker.id === selectedId)
-  const appearanceEnabled = Boolean(selectedMarker && activeTool === 'select')
+  const appearanceEnabled = Boolean(!isReadOnly && selectedMarker && activeTool === 'select')
   const selectedPath = selectedDrawing && (drawings[selectedDrawing.type] || []).find((drawing) => drawing.id === selectedDrawing.id)
   const selectedPathTool = selectedPath && DRAWING_TOOLS.find((tool) => tool.id === selectedDrawing.type)
-  const pathAppearanceVisible = Boolean(selectedPath && selectedPathTool && activeTool === 'select')
+  const pathAppearanceVisible = Boolean(!isReadOnly && selectedPath && selectedPathTool && activeTool === 'select')
   const selectedText = textAnnotations.find((annotation) => annotation.id === selectedTextId)
-  const textAppearanceVisible = Boolean(selectedText && activeTool === 'select')
+  const textAppearanceVisible = Boolean(!isReadOnly && selectedText && activeTool === 'select')
   const defaultTextColor = activeTheme.fieldClass === 'printer-friendly' ? '#000000' : '#ffffff'
   const isEmpty = markers.length === 0 && allDrawings.length === 0 && textAnnotations.length === 0
 
@@ -634,6 +697,7 @@ export function PlayDesigner({ record, onClose }) {
         key={tool.id}
         type="button"
         className={`play-designer-tool${tool.id === 'select' ? ' select-tool' : ''}${tool.id === activeTool ? ' active' : ''}`}
+        disabled={isReadOnly}
         onClick={() => {
           setActiveTool(tool.id)
           setActiveChain(null)
@@ -651,7 +715,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   return (
-    <section className="play-designer">
+    <section className={`play-designer${record.kind === 'play' ? ' has-adjustment-tabs' : ''}`}>
       <div className="play-designer-header">
         <button type="button" className="play-designer-back" onClick={onClose} aria-label="Back to list">
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
@@ -663,8 +727,9 @@ export function PlayDesigner({ record, onClose }) {
           value={name}
           onChange={(event) => setName(event.target.value)}
           aria-label="Play name"
+          readOnly={Boolean(activeSlideId)}
         />
-        <button type="button" className="play-designer-back" onClick={openSettings} aria-label="Play settings">
+        <button type="button" className="play-designer-back" onClick={openSettings} aria-label="Play settings" disabled={isReadOnly}>
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
             <path
               fill="currentColor"
@@ -679,7 +744,13 @@ export function PlayDesigner({ record, onClose }) {
           {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
-      {error && <p className="data-grid-status data-grid-error">Unable to save: {error}</p>}
+      {error && <p className="data-grid-status data-grid-error">{error}</p>}
+      {printOpen && (
+        <PrintPreviewDialog
+          play={{ name: activeSlideId ? activeSlideTitle : name, markers, drawings, textAnnotations, theme, fieldDecoration, fieldOrientation }}
+          onClose={() => setPrintOpen(false)}
+        />
+      )}
       {settingsOpen && (
         <div className="dialog-overlay" onClick={() => setSettingsOpen(false)}>
           <form className="dialog-panel" onClick={(event) => event.stopPropagation()} onSubmit={handleSettingsSave}>
@@ -750,7 +821,7 @@ export function PlayDesigner({ record, onClose }) {
         <div className="play-designer-drawing-tools" role="group" aria-label="Path tools">
           {DRAWING_TOOLS.slice(1).map(toolButton)}
         </div>
-        <button type="button" className="play-designer-tool" onClick={addTextAnnotation} title="Add Text">
+        <button type="button" className="play-designer-tool" onClick={addTextAnnotation} title="Add Text" disabled={isReadOnly}>
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
             <path fill="currentColor" d="M5 4h14v2h-6v14h-2V6H5z" />
           </svg>
@@ -760,7 +831,7 @@ export function PlayDesigner({ record, onClose }) {
           type="button"
           className="play-designer-tool"
           onClick={undoLastDrawing}
-          disabled={!canUndoDrawing}
+          disabled={!canUndoDrawing || isReadOnly}
           title="Undo Last"
         >
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
@@ -783,14 +854,24 @@ export function PlayDesigner({ record, onClose }) {
           </button>
           {menuOpen && (
             <div className="toolbar-dropdown" role="menu">
-              <button type="button" role="menuitem" onClick={() => flipPlay('horizontal')}>
+              <button type="button" role="menuitem" onClick={() => flipPlay('horizontal')} disabled={isReadOnly}>
                 Flip Horizontal
               </button>
-              <button type="button" role="menuitem" onClick={() => flipPlay('vertical')}>
+              <button type="button" role="menuitem" onClick={() => flipPlay('vertical')} disabled={isReadOnly}>
                 Flip Vertical
               </button>
-              <button type="button" role="menuitem" onClick={restartPlay}>
+              <button type="button" role="menuitem" onClick={restartPlay} disabled={isReadOnly}>
                 Restart Play
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false)
+                  setPrintOpen(true)
+                }}
+              >
+                Print...
               </button>
             </div>
           )}
@@ -961,6 +1042,7 @@ export function PlayDesigner({ record, onClose }) {
       )}
       <div
         ref={fieldRef}
+        id="play-designer-field"
         className={`play-designer-field${activeTool !== 'select' ? ' drawing' : ''}${themeClass}`}
         onClick={handleFieldClick}
         onDoubleClick={handleFieldDoubleClick}
@@ -968,14 +1050,15 @@ export function PlayDesigner({ record, onClose }) {
         onPointerUp={handleFieldPointerUp}
         onPointerLeave={handleFieldPointerUp}
         onKeyDown={handleKeyDown}
-        tabIndex={0}
+        tabIndex={isReadOnly ? -1 : 0}
         role="application"
+        aria-readonly={isReadOnly}
         aria-label="Play field"
       >
         {fieldDecoration !== FIELD_DECORATIONS[0] && (
           <div className="play-designer-hash-marks" aria-hidden="true">
             {HASH_MARK_Y_POSITIONS.flatMap((top) =>
-              hashMarkXPositions.map((left) => (
+              hashXPositions.map((left) => (
                 <span
                   key={`${top}-${left}`}
                   className="play-designer-hash-mark"
@@ -985,7 +1068,7 @@ export function PlayDesigner({ record, onClose }) {
             )}
           </div>
         )}
-        {isEmpty && (
+        {isEmpty && !isReadOnly && (
           <p className="play-designer-hint">
             Drag players to reposition them. Pick a tool, click a player to anchor a line, click to add
             segments, and double-click to finish.
@@ -998,7 +1081,7 @@ export function PlayDesigner({ record, onClose }) {
             style={{
               left: `${annotation.x}%`,
               top: `${annotation.y}%`,
-              width: `${textAnnotationWidth(annotation)}px`,
+              width: `${textAnnotationWidth(annotation, fieldRef.current)}px`,
               ...textAnnotationStyle(annotation),
             }}
             value={annotation.text}
@@ -1012,6 +1095,7 @@ export function PlayDesigner({ record, onClose }) {
             onPointerDown={(event) => handleTextPointerDown(event, annotation.id)}
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
+            readOnly={isReadOnly}
             onBlur={() => {
               if (!annotation.text.trim()) {
                 setTextAnnotations((current) => current.filter((item) => item.id !== annotation.id))
@@ -1033,8 +1117,8 @@ export function PlayDesigner({ record, onClose }) {
             ]
             const isSelected = selectedDrawing?.type === drawing.type && selectedDrawing?.id === drawing.id
             const color = drawing.color || toolColor(tool)
-            const cap = tool.endCap === 'tbar' ? tbarCapPoints(points) : null
-            const arrow = tool.arrow ? arrowCapPoints(points) : null
+            const cap = tool.endCap === 'tbar' ? tbarCap(points) : null
+            const arrow = tool.arrow ? arrowCap(points) : null
             return (
               <g key={drawing.id} className={isSelected ? 'play-designer-drawing selected' : 'play-designer-drawing'}>
                 {isSelected && (
@@ -1109,8 +1193,8 @@ export function PlayDesigner({ record, onClose }) {
               ...activeChain.points.map((p) => ({ x: chainAnchor.x + p.dx, y: chainAnchor.y + p.dy })),
             ]
             if (cursorPos) points.push(cursorPos)
-            const cap = tool.endCap === 'tbar' ? tbarCapPoints(points) : null
-            const arrow = tool.arrow ? arrowCapPoints(points) : null
+            const cap = tool.endCap === 'tbar' ? tbarCap(points) : null
+            const arrow = tool.arrow ? arrowCap(points) : null
             return (
               <g>
                 <path
@@ -1149,21 +1233,111 @@ export function PlayDesigner({ record, onClose }) {
             key={marker.id}
             type="button"
             className={`play-designer-marker ${marker.team || 'offense'} ${marker.decoration || 'solid'}${marker.color ? ' color-override' : ''}${marker.id === selectedId ? ' selected' : ''}${activeTool !== 'select' && activeTool !== 'dtb' ? ' anchorable' : ''}${themeClass}`}
-            style={{
-              left: `${marker.x}%`,
-              top: `${marker.y}%`,
-              '--marker-color': marker.color,
-              '--marker-decoration-color': marker.color?.toLowerCase() === '#ffffff' ? '#374151' : marker.color,
-              '--marker-override-text': marker.color?.toLowerCase() === '#ffffff' ? '#111' : '#fff',
-            }}
+            style={markerStyleVars(marker)}
             onPointerDown={(event) => handleMarkerPointerDown(event, marker.id)}
             onClick={(event) => handleMarkerClick(event, marker.id)}
             aria-label="Player marker"
+            disabled={isReadOnly}
           >
             {marker.label}
           </button>
         ))}
       </div>
+      {record.kind === 'play' && (
+        <>
+          <div className={`play-designer-slides${themeClass}`} aria-busy={slidesLoading}>
+            <div className="play-designer-sheet-tabs" role="tablist" aria-label="Play adjustments">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!activeSlideId}
+                aria-controls="play-designer-field"
+                className={`play-designer-tab${!activeSlideId ? ' active' : ''}`}
+                onClick={() => activateSlide(null)}
+                disabled={saving || Boolean(removingSlideId)}
+                title={name || 'Saved play'}
+              >
+                {name || 'Untitled Play'}
+              </button>
+            {slides.map((slide, index) => {
+              const title = slideDraftTitles[slide.id] || slide.title || `Adjustment ${index + 1}`
+              const isActive = slide.id === activeSlideId
+              return (
+                <div className={`play-designer-tab-item${isActive ? ' active' : ''}`} key={slide.id}>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-controls="play-designer-field"
+                    className="play-designer-tab"
+                    onClick={() => activateSlide(slide.id)}
+                    disabled={saving || Boolean(removingSlideId)}
+                    title={title}
+                  >
+                    <span>{title}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="play-designer-tab-action"
+                    aria-label={`Rename ${title}`}
+                    title={`Rename ${title}`}
+                    onClick={() => {
+                      activateSlide(slide.id)
+                      setEditingSlideId(slide.id)
+                    }}
+                    disabled={saving || Boolean(removingSlideId)}
+                  >
+                    <Pencil size={13} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="play-designer-tab-action remove"
+                    aria-label={`Delete ${title}`}
+                    title={`Delete ${title}`}
+                    onClick={() => handleDeleteAdjustment(slide)}
+                    disabled={saving || removingSlideId === slide.id}
+                  >
+                    <X size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              )
+            })}
+            </div>
+            <button
+              type="button"
+              className="play-designer-add-adjustment"
+              onClick={handleAddAdjustment}
+              disabled={slidesLoading || slidesLoadError || saving || slides.length >= MAX_ADJUSTMENT_SLIDES}
+              title={slides.length >= MAX_ADJUSTMENT_SLIDES ? 'Maximum of 3 adjustments' : 'Add an adjustment slide'}
+              aria-label={slides.length >= MAX_ADJUSTMENT_SLIDES ? 'Maximum of 3 adjustments reached' : 'Add Adjustment'}
+            >
+              <Plus size={15} aria-hidden="true" />
+            </button>
+          </div>
+          {editingSlideId && activeSlideId === editingSlideId && (
+            <div className="play-designer-rename-adjustment">
+              <label htmlFor="adjustment-slide-title">Adjustment name</label>
+              <input
+                id="adjustment-slide-title"
+                value={activeSlideTitle}
+                maxLength={80}
+                autoFocus
+                onChange={(event) => {
+                  const title = event.target.value
+                  setActiveSlideTitle(title)
+                  setSlideDraftTitles((current) => ({ ...current, [editingSlideId]: title }))
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') setEditingSlideId(null)
+                }}
+              />
+              <button type="button" className="play-designer-tab-action" onClick={() => setEditingSlideId(null)} aria-label="Finish renaming">
+                <Check size={16} aria-hidden="true" />
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </section>
   )
 }

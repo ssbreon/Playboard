@@ -1,0 +1,120 @@
+import { useEffect, useRef, useState } from 'react'
+import { getTheme } from '../utils/themes'
+import {
+  BLITZ_FIRST_SEGMENT_DASH,
+  DRAWING_TOOLS,
+  HASH_MARK_Y_POSITIONS,
+  TBAR_THICKNESS_PX,
+  arrowCapPoints,
+  drawingPoints,
+  flattenDrawings,
+  hashMarkXPositions,
+  markerStyleVars,
+  normalizeDrawings,
+  normalizeTextAnnotations,
+  pathData,
+  tbarCapPoints,
+  textAnnotationStyle,
+  textAnnotationWidth,
+  toolColor,
+  toolDash,
+} from '../utils/playGeometry'
+
+/** Read-only rendering of a play's field, markers, drawings and text. Used for print output. */
+export function PlayFieldView({ play, className = '' }) {
+  const fieldRef = useRef(null)
+  const [fieldPxSize, setFieldPxSize] = useState({ width: 100, height: 100 })
+
+  useEffect(() => {
+    const el = fieldRef.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      if (width > 0 && height > 0) setFieldPxSize({ width, height })
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const markers = play.markers || []
+  const drawings = normalizeDrawings(play.drawings)
+  const textAnnotations = normalizeTextAnnotations(play.textAnnotations)
+  const theme = getTheme(play.theme)
+  const themeClass = theme.fieldClass ? ` ${theme.fieldClass}` : ''
+  const showHashMarks = Boolean(play.fieldDecoration) && play.fieldDecoration !== 'None'
+  const xPositions = hashMarkXPositions(play.fieldOrientation)
+
+  return (
+    <div ref={fieldRef} className={`play-designer-field play-field-view${themeClass} ${className}`.trim()}>
+      {showHashMarks && (
+        <div className="play-designer-hash-marks" aria-hidden="true">
+          {HASH_MARK_Y_POSITIONS.flatMap((top) =>
+            xPositions.map((left) => (
+              <span key={`${top}-${left}`} className="play-designer-hash-mark" style={{ left: `${left}%`, top: `${top}%` }} />
+            )),
+          )}
+        </div>
+      )}
+      {textAnnotations.map((annotation) => (
+        <span
+          key={annotation.id}
+          className={`play-designer-text-annotation${annotation.box ? ' boxed' : ''}`}
+          style={{
+            left: `${annotation.x}%`,
+            top: `${annotation.y}%`,
+            width: `${textAnnotationWidth(annotation, fieldRef.current)}px`,
+            ...textAnnotationStyle(annotation),
+          }}
+        >
+          {annotation.text}
+        </span>
+      ))}
+      <svg className="play-designer-routes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {flattenDrawings(drawings).map((drawing) => {
+          const points = drawingPoints(drawing, drawings, markers)
+          if (!points) return null
+          const tool = DRAWING_TOOLS.find((t) => t.id === drawing.type)
+          const color = drawing.color || toolColor(tool, theme)
+          const cap = tool.endCap === 'tbar' ? tbarCapPoints(points, fieldPxSize) : null
+          const arrow = tool.arrow ? arrowCapPoints(points, fieldPxSize) : null
+          return (
+            <g key={drawing.id}>
+              <path
+                className="play-designer-route"
+                d={pathData(tool.id === 'blitz' ? points.slice(0, 2) : points)}
+                stroke={color}
+                strokeDasharray={tool.id === 'blitz' ? BLITZ_FIRST_SEGMENT_DASH : toolDash(tool, theme) || undefined}
+                strokeLinecap={tool.id === 'dtb' ? 'round' : undefined}
+              />
+              {tool.id === 'blitz' && points.length > 2 && (
+                <path className="play-designer-route" d={pathData(points.slice(1))} stroke={color} />
+              )}
+              {cap && (
+                <line
+                  className="play-designer-block-cap"
+                  x1={cap.x1}
+                  y1={cap.y1}
+                  x2={cap.x2}
+                  y2={cap.y2}
+                  stroke={color}
+                  strokeWidth={TBAR_THICKNESS_PX}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+              {arrow && <polygon points={arrow} fill={color} />}
+            </g>
+          )
+        })}
+      </svg>
+      {markers.map((marker) => (
+        <span
+          key={marker.id}
+          className={`play-designer-marker ${marker.team || 'offense'} ${marker.decoration || 'solid'}${marker.color ? ' color-override' : ''}${themeClass}`}
+          style={markerStyleVars(marker)}
+        >
+          {marker.label}
+        </span>
+      ))}
+    </div>
+  )
+}

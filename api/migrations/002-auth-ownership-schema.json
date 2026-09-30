@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "provider": "azure-cosmos-nosql",
+  "description": "Adds authenticated ownership to user-created resources. Existing local records are assigned to DEV_USER_ID when development authentication starts.",
+  "container": {
+    "id": "playboard",
+    "partitionKeyPath": "/partitionKey",
+    "requiredFields": {
+      "playbooks": ["ownerId"],
+      "plays": ["ownerId"],
+      "slides": ["ownerId"],
+      "exports": ["ownerId"],
+      "gamePlans": ["ownerId"],
+      "scoutPlays": ["ownerId"]
+    }
+  }
+}

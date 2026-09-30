@@ -18,11 +18,11 @@
   - GET /api/playbooks/{playbookId}/plays/{playId}
   - PATCH /api/playbooks/{playbookId}/plays/{playId}
   - DELETE /api/playbooks/{playbookId}/plays/{playId}
-  - GET /api/playbooks/{playbookId}/slides
-  - POST /api/playbooks/{playbookId}/slides
-  - GET /api/playbooks/{playbookId}/slides/{slideId}
-  - PATCH /api/playbooks/{playbookId}/slides/{slideId}
-  - DELETE /api/playbooks/{playbookId}/slides/{slideId}
+  - GET /api/playbooks/{playbookId}/plays/{playId}/slides
+  - POST /api/playbooks/{playbookId}/plays/{playId}/slides
+  - GET /api/playbooks/{playbookId}/plays/{playId}/slides/{slideId}
+  - PATCH /api/playbooks/{playbookId}/plays/{playId}/slides/{slideId}
+  - DELETE /api/playbooks/{playbookId}/plays/{playId}/slides/{slideId}
   - POST /api/exports
   - GET /api/exports/{id}
 
