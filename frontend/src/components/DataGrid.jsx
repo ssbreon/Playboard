@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Search } from 'lucide-react'
-import { hashHue } from './CategoryBadge'
+import { getCategoryBadgeStyle } from './CategoryBadge'
 
 const PAGE_SIZE = 50
 
@@ -130,7 +130,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                     key={option}
                     type="button"
                     className={`category-badge category-filter-badge${active ? ' is-active' : ''}`}
-                    style={{ '--badge-hue': hashHue(option) }}
+                    style={getCategoryBadgeStyle(option)}
                     aria-pressed={active}
                     onClick={() => toggleCategory(option)}
                   >

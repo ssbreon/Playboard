@@ -1,18 +1,24 @@
-// FNV-1a keeps the hue stable for a given category across sessions and grids.
-export function hashHue(text) {
-  let hash = 2166136261
-  for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
-  }
-  return (hash >>> 0) % 360
+const CATEGORY_COLORS = {
+  Offense: { hue: 142, saturation: '58%' },
+  Defense: { hue: 215, saturation: '72%' },
+  'Special Teams': { hue: 275, saturation: '62%' },
+  Front: { hue: 142, saturation: '58%' },
+  Stunt: { hue: 275, saturation: '62%' },
+  Blitz: { hue: 2, saturation: '70%' },
+  Coverage: { hue: 215, saturation: '72%' },
+  'Play Call': { hue: 220, saturation: '8%' },
+}
+
+export function getCategoryBadgeStyle(category) {
+  const color = CATEGORY_COLORS[category] || CATEGORY_COLORS['Play Call']
+  return { '--badge-hue': color.hue, '--badge-saturation': color.saturation }
 }
 
 export function CategoryBadge({ value }) {
   const label = value == null ? '' : String(value).trim()
   if (!label) return '—'
   return (
-    <span className="category-badge" style={{ '--badge-hue': hashHue(label) }}>
+    <span className="category-badge" style={getCategoryBadgeStyle(label)}>
       {label}
     </span>
   )

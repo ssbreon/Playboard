@@ -172,7 +172,6 @@ export function PlayDesigner({ record, onClose }) {
   }, [])
 
   const activeSlide = slides.find((slide) => slide.id === activeSlideId)
-  const isReadOnly = record.kind === 'play' && !activeSlideId && slides.length === 0
   const savedBaseDesign = {
     markers: savedMarkers,
     drawings: savedDrawings,
@@ -471,7 +470,6 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleTextPointerDown(event, id) {
-    if (isReadOnly) return
     event.stopPropagation()
     const annotation = textAnnotations.find((item) => item.id === id)
     const fieldRect = fieldRef.current?.getBoundingClientRect()
@@ -504,7 +502,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleMarkerPointerDown(event, id) {
-    if (isReadOnly || activeTool !== 'select') return
+    if (activeTool !== 'select') return
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     setSelectedId(id)
@@ -515,7 +513,6 @@ export function PlayDesigner({ record, onClose }) {
 
   function handleMarkerClick(event, id) {
     event.stopPropagation()
-    if (isReadOnly) return
     if (activeTool === 'select' || activeTool === 'dtb' || activeChain) return
     setActiveChain({ type: activeTool, anchorId: id, points: [] })
     setSelectedDrawing(null)
@@ -547,7 +544,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleDrawingClick(event, type, id) {
-    if (isReadOnly || activeTool !== 'select') return
+    if (activeTool !== 'select') return
     event.stopPropagation()
     setSelectedDrawing({ type, id })
     setSelectedId(null)
@@ -555,7 +552,6 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleBlockCapClick(event, drawing) {
-    if (isReadOnly) return
     if (activeTool !== 'dtb' || activeChain) {
       handleDrawingClick(event, 'block', drawing.id)
       return
@@ -567,7 +563,6 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleFieldClick(event) {
-    if (isReadOnly) return
     if (activeTool === 'select') {
       // Marker/drawing clicks stop propagation, so reaching here means empty field was clicked.
       setSelectedId(null)
@@ -588,7 +583,7 @@ export function PlayDesigner({ record, onClose }) {
 
   function handleFieldDoubleClick(event) {
     event.preventDefault()
-    if (isReadOnly || activeTool === 'select' || !activeChain) return
+    if (activeTool === 'select' || !activeChain) return
     const points = activeChain.points.length > 0 ? activeChain.points.slice(0, -1) : activeChain.points
     if (points.length > 0) {
       const newDrawing = activeChain.type === 'dtb'
@@ -602,7 +597,6 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleFieldPointerMove(event) {
-    if (isReadOnly) return
     if (dragId) {
       const { x, y } = positionFromEvent(event)
       setMarkers((current) => current.map((marker) => (marker.id === dragId ? { ...marker, x, y } : marker)))
@@ -630,7 +624,6 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleKeyDown(event) {
-    if (isReadOnly) return
     if (event.key === 'Escape' && activeChain) {
       setActiveChain(null)
       setCursorPos(null)
@@ -682,12 +675,12 @@ export function PlayDesigner({ record, onClose }) {
   const allDrawings = flattenDrawings(drawings)
   const chainAnchor = activeChain ? drawingAnchor(activeChain) : null
   const selectedMarker = markers.find((marker) => marker.id === selectedId)
-  const appearanceEnabled = Boolean(!isReadOnly && selectedMarker && activeTool === 'select')
+  const appearanceEnabled = Boolean(selectedMarker && activeTool === 'select')
   const selectedPath = selectedDrawing && (drawings[selectedDrawing.type] || []).find((drawing) => drawing.id === selectedDrawing.id)
   const selectedPathTool = selectedPath && DRAWING_TOOLS.find((tool) => tool.id === selectedDrawing.type)
-  const pathAppearanceVisible = Boolean(!isReadOnly && selectedPath && selectedPathTool && activeTool === 'select')
+  const pathAppearanceVisible = Boolean(selectedPath && selectedPathTool && activeTool === 'select')
   const selectedText = textAnnotations.find((annotation) => annotation.id === selectedTextId)
-  const textAppearanceVisible = Boolean(!isReadOnly && selectedText && activeTool === 'select')
+  const textAppearanceVisible = Boolean(selectedText && activeTool === 'select')
   const defaultTextColor = activeTheme.fieldClass === 'printer-friendly' ? '#000000' : '#ffffff'
   const isEmpty = markers.length === 0 && allDrawings.length === 0 && textAnnotations.length === 0
 
@@ -697,7 +690,6 @@ export function PlayDesigner({ record, onClose }) {
         key={tool.id}
         type="button"
         className={`play-designer-tool${tool.id === 'select' ? ' select-tool' : ''}${tool.id === activeTool ? ' active' : ''}`}
-        disabled={isReadOnly}
         onClick={() => {
           setActiveTool(tool.id)
           setActiveChain(null)
@@ -729,7 +721,7 @@ export function PlayDesigner({ record, onClose }) {
           aria-label="Play name"
           readOnly={Boolean(activeSlideId)}
         />
-        <button type="button" className="play-designer-back" onClick={openSettings} aria-label="Play settings" disabled={isReadOnly}>
+        <button type="button" className="play-designer-back" onClick={openSettings} aria-label="Play settings">
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
             <path
               fill="currentColor"
@@ -821,7 +813,7 @@ export function PlayDesigner({ record, onClose }) {
         <div className="play-designer-drawing-tools" role="group" aria-label="Path tools">
           {DRAWING_TOOLS.slice(1).map(toolButton)}
         </div>
-        <button type="button" className="play-designer-tool" onClick={addTextAnnotation} title="Add Text" disabled={isReadOnly}>
+        <button type="button" className="play-designer-tool" onClick={addTextAnnotation} title="Add Text">
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
             <path fill="currentColor" d="M5 4h14v2h-6v14h-2V6H5z" />
           </svg>
@@ -831,7 +823,7 @@ export function PlayDesigner({ record, onClose }) {
           type="button"
           className="play-designer-tool"
           onClick={undoLastDrawing}
-          disabled={!canUndoDrawing || isReadOnly}
+          disabled={!canUndoDrawing}
           title="Undo Last"
         >
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
@@ -854,13 +846,13 @@ export function PlayDesigner({ record, onClose }) {
           </button>
           {menuOpen && (
             <div className="toolbar-dropdown" role="menu">
-              <button type="button" role="menuitem" onClick={() => flipPlay('horizontal')} disabled={isReadOnly}>
+              <button type="button" role="menuitem" onClick={() => flipPlay('horizontal')}>
                 Flip Horizontal
               </button>
-              <button type="button" role="menuitem" onClick={() => flipPlay('vertical')} disabled={isReadOnly}>
+              <button type="button" role="menuitem" onClick={() => flipPlay('vertical')}>
                 Flip Vertical
               </button>
-              <button type="button" role="menuitem" onClick={restartPlay} disabled={isReadOnly}>
+              <button type="button" role="menuitem" onClick={restartPlay}>
                 Restart Play
               </button>
               <button
@@ -1050,9 +1042,8 @@ export function PlayDesigner({ record, onClose }) {
         onPointerUp={handleFieldPointerUp}
         onPointerLeave={handleFieldPointerUp}
         onKeyDown={handleKeyDown}
-        tabIndex={isReadOnly ? -1 : 0}
+        tabIndex={0}
         role="application"
-        aria-readonly={isReadOnly}
         aria-label="Play field"
       >
         {fieldDecoration !== FIELD_DECORATIONS[0] && (
@@ -1068,7 +1059,7 @@ export function PlayDesigner({ record, onClose }) {
             )}
           </div>
         )}
-        {isEmpty && !isReadOnly && (
+        {isEmpty && (
           <p className="play-designer-hint">
             Drag players to reposition them. Pick a tool, click a player to anchor a line, click to add
             segments, and double-click to finish.
@@ -1095,7 +1086,6 @@ export function PlayDesigner({ record, onClose }) {
             onPointerDown={(event) => handleTextPointerDown(event, annotation.id)}
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
-            readOnly={isReadOnly}
             onBlur={() => {
               if (!annotation.text.trim()) {
                 setTextAnnotations((current) => current.filter((item) => item.id !== annotation.id))
@@ -1237,7 +1227,6 @@ export function PlayDesigner({ record, onClose }) {
             onPointerDown={(event) => handleMarkerPointerDown(event, marker.id)}
             onClick={(event) => handleMarkerClick(event, marker.id)}
             aria-label="Player marker"
-            disabled={isReadOnly}
           >
             {marker.label}
           </button>
@@ -1302,17 +1291,18 @@ export function PlayDesigner({ record, onClose }) {
                 </div>
               )
             })}
+              <button
+                type="button"
+                className="play-designer-tab play-designer-add-adjustment"
+                onClick={handleAddAdjustment}
+                disabled={slidesLoading || slidesLoadError || saving || slides.length >= MAX_ADJUSTMENT_SLIDES}
+                title={slides.length >= MAX_ADJUSTMENT_SLIDES ? 'Maximum of 3 adjustments' : 'Add an adjustment slide'}
+                aria-label={slides.length >= MAX_ADJUSTMENT_SLIDES ? 'Maximum of 3 adjustments reached' : 'Add Adjustment'}
+              >
+                <Plus size={15} aria-hidden="true" />
+                <span>Add Adjustment</span>
+              </button>
             </div>
-            <button
-              type="button"
-              className="play-designer-add-adjustment"
-              onClick={handleAddAdjustment}
-              disabled={slidesLoading || slidesLoadError || saving || slides.length >= MAX_ADJUSTMENT_SLIDES}
-              title={slides.length >= MAX_ADJUSTMENT_SLIDES ? 'Maximum of 3 adjustments' : 'Add an adjustment slide'}
-              aria-label={slides.length >= MAX_ADJUSTMENT_SLIDES ? 'Maximum of 3 adjustments reached' : 'Add Adjustment'}
-            >
-              <Plus size={15} aria-hidden="true" />
-            </button>
           </div>
           {editingSlideId && activeSlideId === editingSlideId && (
             <div className="play-designer-rename-adjustment">
