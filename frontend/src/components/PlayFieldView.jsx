@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { getTheme } from '../utils/themes'
 import {
+  DEFAULT_PLAY_PERSPECTIVE,
   BLITZ_FIRST_SEGMENT_DASH,
   DRAWING_TOOLS,
-  HASH_MARK_Y_POSITIONS,
   TBAR_THICKNESS_PX,
   arrowCapPoints,
   drawingPoints,
+  endZoneBandsForWindow,
+  goalLinePositionsForWindow,
+  fieldWindowForZone,
   flattenDrawings,
   hashMarkXPositions,
+  hashMarkYPositionsForWindow,
   markerStyleVars,
   normalizeDrawings,
   normalizeTextAnnotations,
@@ -18,6 +22,8 @@ import {
   textAnnotationWidth,
   toolColor,
   toolDash,
+  yardNumberXPositions,
+  yardNumbersForWindow,
 } from '../utils/playGeometry'
 
 /** Read-only rendering of a play's field, markers, drawings and text. Used for print output. */
@@ -41,20 +47,71 @@ export function PlayFieldView({ play, className = '' }) {
   const textAnnotations = normalizeTextAnnotations(play.textAnnotations)
   const theme = getTheme(play.theme)
   const themeClass = theme.fieldClass ? ` ${theme.fieldClass}` : ''
+    const perspective = play.perspective || DEFAULT_PLAY_PERSPECTIVE
   const showHashMarks = Boolean(play.fieldDecoration) && play.fieldDecoration !== 'None'
+  const showYardNumbers = play.fieldDecoration === 'Hash Marks and Numbers'
   const xPositions = hashMarkXPositions(play.fieldOrientation)
+  const fieldWindow = fieldWindowForZone(play.fieldZone, perspective)
+  const yPositions = hashMarkYPositionsForWindow(fieldWindow, perspective)
+  const yardNumbers = showYardNumbers ? yardNumbersForWindow(fieldWindow, perspective) : []
+  const yardNumberX = yardNumberXPositions(play.fieldOrientation)
+  const endZoneBands = showYardNumbers ? endZoneBandsForWindow(fieldWindow, perspective) : []
+  const goalLinePositions = showYardNumbers ? goalLinePositionsForWindow(fieldWindow, perspective) : []
+  const losPercent = fieldWindow.losPercent
 
   return (
-    <div ref={fieldRef} className={`play-designer-field play-field-view${themeClass} ${className}`.trim()}>
+    <div
+      ref={fieldRef}
+      className={`play-designer-field play-field-view${themeClass} zone-windowed ${className}`.trim()}
+    >
+      <span className="play-designer-los-line" style={{ top: `${losPercent}%` }} aria-hidden="true" />
+      {endZoneBands.map((band) => (
+        <div
+          key={`${band.top}-${band.height}`}
+          className="play-designer-end-zone"
+          style={{ top: `${band.top}%`, height: `${band.height}%` }}
+          aria-hidden="true"
+        />
+      ))}
+      {goalLinePositions.map((top) => (
+        <span key={top} className="play-designer-goal-line" style={{ top: `${top}%` }} aria-hidden="true" />
+      ))}
       {showHashMarks && (
         <div className="play-designer-hash-marks" aria-hidden="true">
-          {HASH_MARK_Y_POSITIONS.flatMap((top) =>
-            xPositions.map((left) => (
-              <span key={`${top}-${left}`} className="play-designer-hash-mark" style={{ left: `${left}%`, top: `${top}%` }} />
+          {yPositions.flatMap((top) =>
+            xPositions.map((left, index) => (
+              <span
+                key={`${top}-${left}`}
+                className={`play-designer-hash-mark${index === 0 || index === xPositions.length - 1 ? ' sideline' : ''}`}
+                style={{ left: `${left}%`, top: `${top}%` }}
+              />
             )),
           )}
         </div>
       )}
+      {showYardNumbers &&
+        yardNumbers.map((number) =>
+          yardNumberX.map((left, side) => (
+            <span key={`${number.yard}-${left}`}>
+              <span
+                className={`play-designer-yard-number ${side === 0 ? 'left' : 'right'}`}
+                style={{ left: `${left}%`, top: `${number.percent}%` }}
+                aria-hidden="true"
+              >
+                {number.label}
+              </span>
+              {number.arrow && (
+                <span
+                  className={`play-designer-yard-arrow ${number.arrow}`}
+                  style={{ left: `${left}%`, top: `${number.percent}%` }}
+                  aria-hidden="true"
+                >
+                  {number.arrow === 'up' ? '▲' : '▼'}
+                </span>
+              )}
+            </span>
+          )),
+        )}
       {textAnnotations.map((annotation) => (
         <span
           key={annotation.id}

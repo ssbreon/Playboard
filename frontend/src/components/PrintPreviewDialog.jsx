@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { PlayFieldView } from './PlayFieldView'
+import { defaultPlayPerspective } from '../utils/playGeometry'
 
 const DPI = 96
 const PAGE_MARGIN_IN = 0.5
@@ -176,7 +177,10 @@ export function PrintPreviewDialog({ play, plays, collection, onClose }) {
                       {pagePlays.map((item) => (
                         <div key={item.id || item.name} className="print-cell">
                           {showTitle && <h1 className="print-sheet-title">{item.name}</h1>}
-                          <PlayFieldView play={item} className="print-field" />
+                          <PlayFieldView
+                            play={{ ...item, perspective: item.perspective || defaultPlayPerspective(collection?.category) }}
+                            className="print-field"
+                          />
                         </div>
                       ))}
                     </div>,

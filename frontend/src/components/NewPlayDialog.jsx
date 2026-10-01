@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { PLAY_TEMPLATES } from '../utils/formations'
 import { DEFAULT_THEME_ID, PLAY_THEMES } from '../utils/themes'
+import { DEFAULT_FIELD_ZONE, FIELD_ZONES } from '../utils/playGeometry'
 
 export const PLAY_CATEGORIES = ['Front', 'Stunt', 'Blitz', 'Coverage', 'Play Call']
 export const FIELD_DECORATIONS = ['None', 'Hash Marks', 'Hash Marks and Numbers']
@@ -11,6 +12,7 @@ export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel
   const [templateId, setTemplateId] = useState(PLAY_TEMPLATES[0].id)
   const [category, setCategory] = useState(PLAY_CATEGORIES[0])
   const [fieldDecoration, setFieldDecoration] = useState(FIELD_DECORATIONS[0])
+  const [fieldZone, setFieldZone] = useState(DEFAULT_FIELD_ZONE)
   const [fieldOrientation, setFieldOrientation] = useState(FIELD_ORIENTATIONS[0])
   const [themeId, setThemeId] = useState(DEFAULT_THEME_ID)
 
@@ -20,11 +22,12 @@ export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel
     event.preventDefault()
     const trimmed = name.trim()
     if (!trimmed) return
-    onCreate(trimmed, templateId, themeId, category, fieldDecoration, fieldOrientation)
+    onCreate(trimmed, templateId, themeId, category, fieldDecoration, fieldOrientation, fieldZone)
     setName('')
     setTemplateId(PLAY_TEMPLATES[0].id)
     setCategory(PLAY_CATEGORIES[0])
     setFieldDecoration(FIELD_DECORATIONS[0])
+    setFieldZone(DEFAULT_FIELD_ZONE)
     setFieldOrientation(FIELD_ORIENTATIONS[0])
     setThemeId(DEFAULT_THEME_ID)
   }
@@ -34,6 +37,7 @@ export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel
     setTemplateId(PLAY_TEMPLATES[0].id)
     setCategory(PLAY_CATEGORIES[0])
     setFieldDecoration(FIELD_DECORATIONS[0])
+    setFieldZone(DEFAULT_FIELD_ZONE)
     setFieldOrientation(FIELD_ORIENTATIONS[0])
     setThemeId(DEFAULT_THEME_ID)
     onCancel()
@@ -67,6 +71,16 @@ export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel
           <span>Field Decoration</span>
           <select value={fieldDecoration} onChange={(event) => setFieldDecoration(event.target.value)}>
             {FIELD_DECORATIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="dialog-field">
+          <span>Field Zone</span>
+          <select value={fieldZone} onChange={(event) => setFieldZone(event.target.value)}>
+            {FIELD_ZONES.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>

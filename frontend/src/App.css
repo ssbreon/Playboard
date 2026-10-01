@@ -218,13 +218,15 @@ button:active:not(:disabled) {
   border-radius: 12px;
   border: 1px solid var(--border);
   margin-top: 10px;
-  background: repeating-linear-gradient(
-    to bottom,
-    #2f6b3c 0,
-    #2f6b3c 12.5%,
-    #356f41 12.5%,
-    #356f41 25%
-  );
+  background:
+    repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.8) 0, rgba(255, 255, 255, 0.8) 1px, transparent 1px, transparent 12.5%),
+    repeating-linear-gradient(
+      to bottom,
+      #2f6b3c 0,
+      #2f6b3c 12.5%,
+      #356f41 12.5%,
+      #356f41 25%
+    );
   overflow: hidden;
   cursor: default;
   touch-action: none;
@@ -239,7 +241,7 @@ button:active:not(:disabled) {
     top: 50%;
     left: 0;
     right: 0;
-    border-top: 2px dashed rgba(255, 255, 255, 0.85);
+    border-top: 2px solid rgba(255, 255, 255, 0.8);
     pointer-events: none;
     z-index: 1;
   }
@@ -250,16 +252,12 @@ button:active:not(:disabled) {
   }
 
   &.printer-friendly {
-    background: repeating-linear-gradient(
-      to bottom,
-      #fff 0,
-      #fff 12.5%,
-      #f0f0f0 12.5%,
-      #f0f0f0 25%
-    );
+    background:
+      repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.35) 0, rgba(0, 0, 0, 0.35) 1px, transparent 1px, transparent 12.5%),
+      #fff;
 
     &::before {
-      border-top-color: rgba(0, 0, 0, 0.65);
+      border-top-color: rgba(0, 0, 0, 0.35);
     }
   }
 
@@ -273,8 +271,13 @@ button:active:not(:disabled) {
     );
 
     &::before {
-      border-top-color: rgba(255, 255, 255, 0.85);
+      border-top-color: rgba(255, 255, 255, 0.8);
     }
+  }
+
+  /* When Field Zone drives the canvas, the LOS is rendered dynamically via .play-designer-los-line. */
+  &.zone-windowed::before {
+    display: none;
   }
 }
 
@@ -461,15 +464,135 @@ button:active:not(:disabled) {
   width: 10px;
   height: 2px;
   transform: translate(-50%, -50%);
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.play-designer-hash-mark.sideline {
+  width: 14px;
 }
 
 .play-designer-field.printer-friendly .play-designer-hash-mark {
-  background: rgba(0, 0, 0, 0.65);
+  background: rgba(0, 0, 0, 0.35);
 }
 
 .play-designer-field.blackboard .play-designer-hash-mark {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.play-designer-los-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.play-designer-field.printer-friendly .play-designer-los-line {
+  border-top-color: rgba(0, 0, 0, 0.35);
+}
+
+.play-designer-field.blackboard .play-designer-los-line {
+  border-top-color: rgba(255, 255, 255, 0.8);
+}
+
+.play-designer-goal-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 3px solid rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.play-designer-field.printer-friendly .play-designer-goal-line {
+  border-top-color: rgba(0, 0, 0, 0.55);
+}
+
+.play-designer-field.blackboard .play-designer-goal-line {
+  border-top-color: rgba(255, 255, 255, 0.9);
+}
+
+.play-designer-end-zone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: #1f4d2b;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.play-designer-field.printer-friendly .play-designer-end-zone {
+  background: #e2e2e2;
+}
+
+.play-designer-field.blackboard .play-designer-end-zone {
+  background: #0d0d0d;
+}
+
+.play-designer-yard-number {
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(90deg);
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.5);
+  font-family: Georgia, 'Times New Roman', Times, serif;
+  font-size: 44px;
+  font-weight: 700;
+  pointer-events: none;
+  z-index: 1;
+
+  /* Numbers on each sideline face opposite directions so they read upright from either side. */
+  &.right {
+    transform: translate(-50%, -50%) rotate(-90deg);
+  }
+}
+
+.play-designer-field.printer-friendly .play-designer-yard-number {
+  -webkit-text-stroke-color: rgba(0, 0, 0, 0.45);
+}
+
+.play-designer-field.blackboard .play-designer-yard-number {
+  -webkit-text-stroke-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Green Field theme paints muted gray numbers with a soft dark outline, like a painted field. */
+.play-designer-field:not(.printer-friendly):not(.blackboard) .play-designer-yard-number {
+  color: #d1d5db;
+  -webkit-text-stroke: 2px #4b5563;
+}
+
+.play-designer-yard-arrow {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 1;
+
+  &.up {
+    margin-top: -38px;
+  }
+
+  &.down {
+    margin-top: 38px;
+  }
+}
+
+.play-designer-field.printer-friendly .play-designer-yard-arrow {
+  -webkit-text-stroke-color: rgba(0, 0, 0, 0.45);
+}
+
+.play-designer-field.blackboard .play-designer-yard-arrow {
+  -webkit-text-stroke-color: rgba(255, 255, 255, 0.5);
+}
+
+.play-designer-field:not(.printer-friendly):not(.blackboard) .play-designer-yard-arrow {
+  color: #d1d5db;
+  -webkit-text-stroke: 2px #4b5563;
 }
 
 .play-designer-toolbar {
@@ -676,15 +799,15 @@ button:active:not(:disabled) {
 }
 
 .player-decoration-option.half-left {
-  background: linear-gradient(to right, var(--preview-color) 50%, #ccc 50%);
+  background: linear-gradient(to right, var(--preview-color) 50%, var(--preview-light-color, #ccc) 50%);
 }
 
 .player-decoration-option.half-right {
-  background: linear-gradient(to right, #ccc 50%, var(--preview-color) 50%);
+  background: linear-gradient(to right, var(--preview-light-color, #ccc) 50%, var(--preview-color) 50%);
 }
 
 .player-decoration-option.vertical-line {
-  background: linear-gradient(to right, #fff calc(50% - 1px), var(--preview-color) calc(50% - 1px), var(--preview-color) calc(50% + 1px), #fff calc(50% + 1px));
+  background: linear-gradient(to right, var(--preview-light-color, #fff) calc(50% - 1px), var(--preview-color) calc(50% - 1px), var(--preview-color) calc(50% + 1px), var(--preview-light-color, #fff) calc(50% + 1px));
 }
 
 .play-designer-tool {
@@ -803,19 +926,29 @@ button:active:not(:disabled) {
   &.offense {
     --team-color: #1d4ed8;
     --decoration-color: var(--team-color);
+    --marker-decoration-light-color: #b0c1f1;
     background: var(--team-color);
   }
 
   &.defense {
     --team-color: #b91c1c;
     --decoration-color: var(--team-color);
+    --marker-decoration-light-color: #f1b0b0;
     background: var(--team-color);
   }
 
-  &.printer-friendly.offense,
-  &.printer-friendly.defense {
+  &.printer-friendly.offense:not(.color-override) {
     --team-color: #fff;
-    --decoration-color: #555;
+    --decoration-color: #1d4ed8;
+    --marker-decoration-light-color: #b0c1f1;
+    --marker-text-color: #000;
+    --marker-border-color: #000;
+  }
+
+  &.printer-friendly.defense:not(.color-override) {
+    --team-color: #fff;
+    --decoration-color: #b91c1c;
+    --marker-decoration-light-color: #f1b0b0;
     --marker-text-color: #000;
     --marker-border-color: #000;
   }
@@ -824,6 +957,7 @@ button:active:not(:disabled) {
   &.blackboard.defense {
     --team-color: #fff;
     --decoration-color: #000;
+    --marker-decoration-light-color: #fff;
     --marker-text-color: #000;
     --marker-border-color: #fff;
   }
@@ -835,19 +969,19 @@ button:active:not(:disabled) {
   }
 
   &.half-left {
-    background: linear-gradient(to right, var(--marker-decoration-color, var(--decoration-color)) 50%, #ccc 50%);
+    background: linear-gradient(to right, var(--marker-decoration-color, var(--decoration-color)) 50%, var(--marker-decoration-light-color, #ccc) 50%);
     border-color: var(--marker-border-color, #fff);
     color: #111;
   }
 
   &.half-right {
-    background: linear-gradient(to right, #ccc 50%, var(--marker-decoration-color, var(--decoration-color)) 50%);
+    background: linear-gradient(to right, var(--marker-decoration-light-color, #ccc) 50%, var(--marker-decoration-color, var(--decoration-color)) 50%);
     border-color: var(--marker-border-color, #fff);
     color: #111;
   }
 
   &.vertical-line {
-    background: linear-gradient(to right, #fff calc(50% - 1px), var(--marker-decoration-color, var(--decoration-color)) calc(50% - 1px), var(--marker-decoration-color, var(--decoration-color)) calc(50% + 1px), #fff calc(50% + 1px));
+    background: linear-gradient(to right, var(--marker-decoration-light-color, #fff) calc(50% - 1px), var(--marker-decoration-color, var(--decoration-color)) calc(50% - 1px), var(--marker-decoration-color, var(--decoration-color)) calc(50% + 1px), var(--marker-decoration-light-color, #fff) calc(50% + 1px));
     border-color: var(--marker-border-color, #fff);
     color: #111;
   }
@@ -886,6 +1020,14 @@ button:active:not(:disabled) {
     align-items: flex-start;
     flex-wrap: wrap;
   }
+}
+
+.play-designer-marquee {
+  position: absolute;
+  border: 1px dashed rgba(255, 200, 0, 0.9);
+  background: rgba(255, 200, 0, 0.15);
+  pointer-events: none;
+  z-index: 5;
 }
 
 .play-designer-text-annotation {

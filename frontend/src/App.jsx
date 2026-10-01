@@ -10,6 +10,7 @@ import { PrintPreviewDialog } from './components/PrintPreviewDialog'
 import { buildMarkersFromTemplate, PLAY_TEMPLATES } from './utils/formations'
 import { formatDate } from './utils/formatDate'
 import { themeLabel } from './utils/themes'
+import { defaultPlayPerspective } from './utils/playGeometry'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import './App.css'
@@ -378,9 +379,10 @@ function App() {
     ]
   }
 
-  async function handleCreatePlay(name, templateId, theme, category, fieldDecoration, fieldOrientation) {
+  async function handleCreatePlay(name, templateId, theme, category, fieldDecoration, fieldOrientation, fieldZone) {
     const { target, parentId } = newDialog
     setNewDialog(null)
+    const perspective = defaultPlayPerspective(parent?.category)
     const template = PLAY_TEMPLATES.find((t) => t.id === templateId) || PLAY_TEMPLATES[0]
     const initialMarkers = buildMarkersFromTemplate(template)
     const record =
@@ -392,9 +394,20 @@ function App() {
             category,
             fieldDecoration,
             fieldOrientation,
+            fieldZone,
+            perspective,
             markers: initialMarkers,
           })
-        : await api.createScoutPlay(parentId, { name, template: templateId, theme, category, fieldDecoration, fieldOrientation })
+        : await api.createScoutPlay(parentId, {
+            name,
+            template: templateId,
+            theme,
+            category,
+            fieldDecoration,
+            fieldOrientation,
+            fieldZone,
+            perspective,
+          })
     setDesigner({
       kind: target,
       parentId,
@@ -408,6 +421,8 @@ function App() {
       category: record.category,
       fieldDecoration: record.fieldDecoration,
       fieldOrientation: record.fieldOrientation,
+      fieldZone: record.fieldZone,
+        perspective: record.perspective || perspective,
     })
   }
 
@@ -426,6 +441,8 @@ function App() {
       category: row.category,
       fieldDecoration: row.fieldDecoration,
       fieldOrientation: row.fieldOrientation,
+      fieldZone: row.fieldZone,
+        perspective: row.perspective || defaultPlayPerspective(parent?.category),
     })
   }
 
@@ -437,6 +454,8 @@ function App() {
       category: row.category,
       fieldDecoration: row.fieldDecoration,
       fieldOrientation: row.fieldOrientation,
+      fieldZone: row.fieldZone,
+      perspective: row.perspective || defaultPlayPerspective(parent?.category),
       markers: row.markers,
       drawings: row.drawings,
       textAnnotations: row.textAnnotations,
@@ -465,7 +484,7 @@ function App() {
     return (row) => [
       { key: 'open', label: 'Open', onClick: (r) => openDesignerForRow(kind, parentId, r) },
       { key: 'copy', label: 'Copy', onClick: (r) => handleCopyPlay(kind, parentId, r) },
-      { key: 'print', label: 'Print...', onClick: (r) => setPrintPlay(r) },
+      { key: 'print', label: 'Print...', onClick: (r) => setPrintPlay({ ...r, perspective: r.perspective || defaultPlayPerspective(parent?.category) }) },
       { key: 'delete', label: 'Delete', destructive: true, onClick: (r) => handleDeletePlay(kind, parentId, r) },
     ]
   }

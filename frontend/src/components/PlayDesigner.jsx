@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Pencil, Plus, X } from 'lucide-react'
+import { Check, Pencil, Play, Plus, X } from 'lucide-react'
 import { api } from '../api'
 import { FIELD_DECORATIONS, FIELD_ORIENTATIONS, PLAY_CATEGORIES } from './NewPlayDialog'
 import { PrintPreviewDialog } from './PrintPreviewDialog'
@@ -7,13 +7,21 @@ import { PLAY_TEMPLATES, buildMarkersFromTemplate } from '../utils/formations'
 import { PLAY_THEMES, getTheme, normalizeThemeId } from '../utils/themes'
 import {
   BLITZ_FIRST_SEGMENT_DASH,
+  DEFAULT_PLAY_PERSPECTIVE,
+  DEFAULT_FIELD_ZONE,
   DRAWING_TOOLS,
-  HASH_MARK_Y_POSITIONS,
+  FIELD_ZONES,
+    PLAY_PERSPECTIVES,
   TBAR_THICKNESS_PX,
   arrowCapPoints,
   drawingAnchor as resolveDrawingAnchor,
+  decorationPreviewVars,
+  endZoneBandsForWindow,
+  goalLinePositionsForWindow,
+  fieldWindowForZone,
   flattenDrawings,
   hashMarkXPositions,
+  hashMarkYPositionsForWindow,
   markerStyleVars,
   normalizeDrawings,
   normalizeTextAnnotations,
@@ -23,6 +31,8 @@ import {
   textAnnotationWidth,
   toolColor as resolveToolColor,
   toolDash as resolveToolDash,
+  yardNumberXPositions,
+  yardNumbersForWindow,
 } from '../utils/playGeometry'
 
 const TOOL_ICONS = {
@@ -59,6 +69,8 @@ function adjustmentDesign(slide, fallback) {
     category: slide.category || fallback.category,
     fieldDecoration: slide.fieldDecoration || fallback.fieldDecoration,
     fieldOrientation: slide.fieldOrientation || fallback.fieldOrientation,
+    fieldZone: slide.fieldZone || fallback.fieldZone,
+    perspective: slide.perspective || fallback.perspective,
     theme: normalizeThemeId(slide.theme || fallback.theme),
   }
 }
@@ -68,6 +80,8 @@ export function PlayDesigner({ record, onClose }) {
   const initialCategory = record.category || PLAY_CATEGORIES[0]
   const initialFieldDecoration = record.fieldDecoration || FIELD_DECORATIONS[0]
   const initialFieldOrientation = record.fieldOrientation || FIELD_ORIENTATIONS[0]
+  const initialFieldZone = record.fieldZone || DEFAULT_FIELD_ZONE
+  const initialPerspective = record.perspective || DEFAULT_PLAY_PERSPECTIVE
   const initialTheme = normalizeThemeId(record.initialTheme)
   const [name, setName] = useState(record.name)
   const [saving, setSaving] = useState(false)
@@ -79,12 +93,18 @@ export function PlayDesigner({ record, onClose }) {
   const [category, setCategory] = useState(initialCategory)
   const [fieldDecoration, setFieldDecoration] = useState(initialFieldDecoration)
   const [fieldOrientation, setFieldOrientation] = useState(initialFieldOrientation)
+  const [fieldZone, setFieldZone] = useState(initialFieldZone)
+  const [perspective, setPerspective] = useState(initialPerspective)
   const [theme, setTheme] = useState(initialTheme)
   const [selectedId, setSelectedId] = useState(null)
   const [selectedDrawing, setSelectedDrawing] = useState(null)
   const [selectedTextId, setSelectedTextId] = useState(null)
   const [hoveredBlockCapId, setHoveredBlockCapId] = useState(null)
   const [dragId, setDragId] = useState(null)
+  const [multiSelectedIds, setMultiSelectedIds] = useState([])
+  const [groupDrag, setGroupDrag] = useState(null)
+  const [marquee, setMarquee] = useState(null)
+  const suppressFieldClickRef = useRef(false)
   const [dragTextId, setDragTextId] = useState(null)
   const [dragTextOffset, setDragTextOffset] = useState(null)
   const [activeTool, setActiveTool] = useState('select')
@@ -99,6 +119,8 @@ export function PlayDesigner({ record, onClose }) {
   const [draftCategory, setDraftCategory] = useState(initialCategory)
   const [draftFieldDecoration, setDraftFieldDecoration] = useState(initialFieldDecoration)
   const [draftFieldOrientation, setDraftFieldOrientation] = useState(initialFieldOrientation)
+  const [draftFieldZone, setDraftFieldZone] = useState(initialFieldZone)
+  const [draftPerspective, setDraftPerspective] = useState(initialPerspective)
   const [draftTheme, setDraftTheme] = useState(initialTheme)
   const [savedName, setSavedName] = useState(record.name)
   const [savedMarkers, setSavedMarkers] = useState(record.initialMarkers || [])
@@ -108,6 +130,8 @@ export function PlayDesigner({ record, onClose }) {
   const [savedCategory, setSavedCategory] = useState(initialCategory)
   const [savedFieldDecoration, setSavedFieldDecoration] = useState(initialFieldDecoration)
   const [savedFieldOrientation, setSavedFieldOrientation] = useState(initialFieldOrientation)
+  const [savedFieldZone, setSavedFieldZone] = useState(initialFieldZone)
+  const [savedPerspective, setSavedPerspective] = useState(initialPerspective)
   const [savedTheme, setSavedTheme] = useState(initialTheme)
   const [slides, setSlides] = useState([])
   const [slidesLoadError, setSlidesLoadError] = useState(false)
@@ -116,14 +140,25 @@ export function PlayDesigner({ record, onClose }) {
   const [activeSlideId, setActiveSlideId] = useState(null)
   const [activeSlideTitle, setActiveSlideTitle] = useState('')
   const [editingSlideId, setEditingSlideId] = useState(null)
+  const [playerAnimation, setPlayerAnimation] = useState(null)
   const [removingSlideId, setRemovingSlideId] = useState(null)
   const slideDraftsRef = useRef({})
   const fieldRef = useRef(null)
   const menuRef = useRef(null)
+  const animationFrameRef = useRef(null)
   const [fieldPxSize, setFieldPxSize] = useState({ width: 100, height: 100 })
   const activeTheme = getTheme(theme)
   const themeClass = activeTheme.fieldClass ? ` ${activeTheme.fieldClass}` : ''
   const hashXPositions = hashMarkXPositions(fieldOrientation)
+  const showHashMarks = fieldDecoration !== FIELD_DECORATIONS[0]
+  const showYardNumbers = fieldDecoration === FIELD_DECORATIONS[2]
+  const fieldWindow = fieldWindowForZone(fieldZone, perspective)
+  const hashYPositions = hashMarkYPositionsForWindow(fieldWindow, perspective)
+  const yardNumbers = showYardNumbers ? yardNumbersForWindow(fieldWindow, perspective) : []
+  const yardNumberX = yardNumberXPositions(fieldOrientation)
+  const endZoneBands = showYardNumbers ? endZoneBandsForWindow(fieldWindow, perspective) : []
+  const goalLinePositions = showYardNumbers ? goalLinePositionsForWindow(fieldWindow, perspective) : []
+  const losPercent = fieldWindow.losPercent
 
   useEffect(() => {
     const el = fieldRef.current
@@ -134,6 +169,10 @@ export function PlayDesigner({ record, onClose }) {
     })
     observer.observe(el)
     return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => () => {
+    if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current)
   }, [])
 
   useEffect(() => {
@@ -180,10 +219,23 @@ export function PlayDesigner({ record, onClose }) {
     category: savedCategory,
     fieldDecoration: savedFieldDecoration,
     fieldOrientation: savedFieldOrientation,
+    fieldZone: savedFieldZone,
+    perspective: savedPerspective,
     theme: savedTheme,
   }
   const savedActiveDesign = activeSlide ? adjustmentDesign(activeSlide, savedBaseDesign) : savedBaseDesign
-  const currentDesign = { markers, drawings, textAnnotations, templateId, category, fieldDecoration, fieldOrientation, theme }
+  const currentDesign = {
+    markers,
+    drawings,
+    textAnnotations,
+    templateId,
+    category,
+    fieldDecoration,
+    fieldOrientation,
+    fieldZone,
+    perspective,
+    theme,
+  }
   const designIsDirty = Object.keys(currentDesign).some(
     (key) => JSON.stringify(currentDesign[key]) !== JSON.stringify(savedActiveDesign[key]),
   )
@@ -206,8 +258,11 @@ export function PlayDesigner({ record, onClose }) {
     setCategory(design.category)
     setFieldDecoration(design.fieldDecoration)
     setFieldOrientation(design.fieldOrientation)
+    setFieldZone(design.fieldZone)
+    setPerspective(design.perspective)
     setTheme(design.theme)
     setSelectedId(null)
+    setMultiSelectedIds([])
     setSelectedDrawing(null)
     setSelectedTextId(null)
     setEditingTextId(null)
@@ -220,6 +275,9 @@ export function PlayDesigner({ record, onClose }) {
 
   function activateSlide(slideId) {
     if (slideId === activeSlideId) return
+    if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current)
+    animationFrameRef.current = null
+    setPlayerAnimation(null)
     slideDraftsRef.current[activeSlideId || 'base'] = captureCurrentDraft()
     setActiveSlideId(slideId)
     setEditingSlideId(null)
@@ -240,6 +298,49 @@ export function PlayDesigner({ record, onClose }) {
     }
   }
 
+  function runAdjustment(slide) {
+    const baseDesign = activeSlideId
+      ? slideDraftsRef.current.base || savedBaseDesign
+      : currentDesign
+    const adjustment = slide.id === activeSlideId
+      ? { markers }
+      : adjustmentDesign(slide, baseDesign)
+    activateSlide(slide.id)
+
+    if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current)
+    const baseMarkers = new Map((baseDesign.markers || []).map((marker) => [marker.id, marker]))
+    const players = Object.fromEntries(
+      adjustment.markers.flatMap((marker) => {
+        const start = baseMarkers.get(marker.id)
+        return start
+          ? [[marker.id, { fromX: start.x, fromY: start.y, toX: marker.x, toY: marker.y }]]
+          : []
+      }),
+    )
+
+    if (Object.keys(players).length === 0) {
+      animationFrameRef.current = null
+      setPlayerAnimation(null)
+      return
+    }
+
+    const duration = 2400
+    let startedAt
+    setPlayerAnimation({ players, progress: 0 })
+    const animate = (timestamp) => {
+      if (startedAt === undefined) startedAt = timestamp
+      const progress = Math.min((timestamp - startedAt) / duration, 1)
+      setPlayerAnimation({ players, progress })
+      if (progress < 1) {
+        animationFrameRef.current = requestAnimationFrame(animate)
+      } else {
+        animationFrameRef.current = null
+        setPlayerAnimation(null)
+      }
+    }
+    animationFrameRef.current = requestAnimationFrame(animate)
+  }
+
   async function handleSave() {
     setSaving(true)
     setError(null)
@@ -252,6 +353,8 @@ export function PlayDesigner({ record, onClose }) {
         category,
         fieldDecoration,
         fieldOrientation,
+        fieldZone,
+        perspective,
         theme,
       }
       if (activeSlideId) {
@@ -275,6 +378,8 @@ export function PlayDesigner({ record, onClose }) {
         setSavedCategory(category)
         setSavedFieldDecoration(fieldDecoration)
         setSavedFieldOrientation(fieldOrientation)
+        setSavedFieldZone(fieldZone)
+        setSavedPerspective(perspective)
         setSavedTheme(theme)
       }
       delete slideDraftsRef.current[activeSlideId || 'base']
@@ -317,6 +422,8 @@ export function PlayDesigner({ record, onClose }) {
         category,
         fieldDecoration,
         fieldOrientation,
+        fieldZone,
+        perspective,
         theme,
         title,
       })
@@ -383,6 +490,8 @@ export function PlayDesigner({ record, onClose }) {
     setDraftCategory(category)
     setDraftFieldDecoration(fieldDecoration)
     setDraftFieldOrientation(fieldOrientation)
+    setDraftFieldZone(fieldZone)
+    setDraftPerspective(perspective)
     setDraftTheme(theme)
     setSettingsOpen(true)
   }
@@ -392,6 +501,8 @@ export function PlayDesigner({ record, onClose }) {
     setCategory(draftCategory)
     setFieldDecoration(draftFieldDecoration)
     setFieldOrientation(draftFieldOrientation)
+    setFieldZone(draftFieldZone)
+    setPerspective(draftPerspective)
     setTheme(draftTheme)
     if (draftTemplateId !== templateId) {
       const template = PLAY_TEMPLATES.find((t) => t.id === draftTemplateId) || PLAY_TEMPLATES[0]
@@ -431,7 +542,11 @@ export function PlayDesigner({ record, onClose }) {
         axis === 'horizontal' ? { ...annotation, x: 100 - annotation.x } : { ...annotation, y: 100 - annotation.y },
       ),
     )
+    if (axis === 'vertical') {
+      setPerspective((current) => (current === PLAY_PERSPECTIVES[0] ? PLAY_PERSPECTIVES[1] : PLAY_PERSPECTIVES[0]))
+    }
     setSelectedId(null)
+    setMultiSelectedIds([])
     setSelectedDrawing(null)
     setSelectedTextId(null)
     setEditingTextId(null)
@@ -445,12 +560,19 @@ export function PlayDesigner({ record, onClose }) {
     setDrawings(normalizeDrawings())
     setTextAnnotations([])
     setSelectedId(null)
+    setMultiSelectedIds([])
     setSelectedDrawing(null)
     setSelectedTextId(null)
     setEditingTextId(null)
     setActiveChain(null)
     setCursorPos(null)
     setDrawHistory([])
+  }
+
+  function restartAdjustment() {
+    if (!activeSlideId || !activeSlide) return
+    restoreDesign(slideDraftsRef.current.base || savedBaseDesign)
+    setMenuOpen(false)
   }
 
   function positionFromEvent(event) {
@@ -504,7 +626,34 @@ export function PlayDesigner({ record, onClose }) {
   function handleMarkerPointerDown(event, id) {
     if (activeTool !== 'select') return
     event.stopPropagation()
+    if (event.shiftKey) {
+      setMultiSelectedIds((current) => {
+        const base = current.length === 0 && selectedId ? [selectedId] : current
+        return base.includes(id) ? base.filter((item) => item !== id) : [...base, id]
+      })
+      setSelectedId(null)
+      setSelectedDrawing(null)
+      setSelectedTextId(null)
+      return
+    }
     event.currentTarget.setPointerCapture(event.pointerId)
+    if (multiSelectedIds.includes(id)) {
+      const fieldRect = fieldRef.current?.getBoundingClientRect()
+      if (!fieldRect) return
+      const origins = {}
+      for (const marker of markers) {
+        if (multiSelectedIds.includes(marker.id)) origins[marker.id] = { x: marker.x, y: marker.y }
+      }
+      setGroupDrag({
+        start: {
+          x: ((event.clientX - fieldRect.left) / fieldRect.width) * 100,
+          y: ((event.clientY - fieldRect.top) / fieldRect.height) * 100,
+        },
+        origins,
+      })
+      return
+    }
+    setMultiSelectedIds([])
     setSelectedId(id)
     setSelectedDrawing(null)
       setSelectedTextId(null)
@@ -563,9 +712,14 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleFieldClick(event) {
+    if (suppressFieldClickRef.current) {
+      suppressFieldClickRef.current = false
+      return
+    }
     if (activeTool === 'select') {
       // Marker/drawing clicks stop propagation, so reaching here means empty field was clicked.
       setSelectedId(null)
+      setMultiSelectedIds([])
       setSelectedDrawing(null)
       setSelectedTextId(null)
       return
@@ -596,7 +750,42 @@ export function PlayDesigner({ record, onClose }) {
     setCursorPos(null)
   }
 
+  function handleFieldPointerDown(event) {
+    if (activeTool !== 'select' || event.button !== 0) return
+    const point = positionFromEvent(event)
+    setMarquee({ start: point, end: point, additive: event.shiftKey })
+  }
+
   function handleFieldPointerMove(event) {
+    if (marquee) {
+      if (!marquee.active) event.currentTarget.setPointerCapture(event.pointerId)
+      const end = positionFromEvent(event)
+      // Ignore tiny jitters so plain clicks still behave as clicks.
+      const active = marquee.active || Math.hypot(end.x - marquee.start.x, end.y - marquee.start.y) > 1
+      setMarquee({ ...marquee, end, active })
+      return
+    }
+    if (groupDrag) {
+      const fieldRect = fieldRef.current?.getBoundingClientRect()
+      if (!fieldRect) return
+      const origins = Object.values(groupDrag.origins)
+      // Clamp the shared delta so no selected player leaves the field.
+      const minDx = -Math.min(...origins.map((point) => point.x))
+      const maxDx = 100 - Math.max(...origins.map((point) => point.x))
+      const minDy = -Math.min(...origins.map((point) => point.y))
+      const maxDy = 100 - Math.max(...origins.map((point) => point.y))
+      const pointerX = ((event.clientX - fieldRect.left) / fieldRect.width) * 100
+      const pointerY = ((event.clientY - fieldRect.top) / fieldRect.height) * 100
+      const dx = Math.min(maxDx, Math.max(minDx, pointerX - groupDrag.start.x))
+      const dy = Math.min(maxDy, Math.max(minDy, pointerY - groupDrag.start.y))
+      setMarkers((current) =>
+        current.map((marker) => {
+          const origin = groupDrag.origins[marker.id]
+          return origin ? { ...marker, x: origin.x + dx, y: origin.y + dy } : marker
+        }),
+      )
+      return
+    }
     if (dragId) {
       const { x, y } = positionFromEvent(event)
       setMarkers((current) => current.map((marker) => (marker.id === dragId ? { ...marker, x, y } : marker)))
@@ -618,12 +807,37 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleFieldPointerUp() {
+    if (marquee) {
+      if (marquee.active) {
+        const left = Math.min(marquee.start.x, marquee.end.x)
+        const right = Math.max(marquee.start.x, marquee.end.x)
+        const top = Math.min(marquee.start.y, marquee.end.y)
+        const bottom = Math.max(marquee.start.y, marquee.end.y)
+        const inside = markers
+          .filter((marker) => marker.x >= left && marker.x <= right && marker.y >= top && marker.y <= bottom)
+          .map((marker) => marker.id)
+        setMultiSelectedIds((current) => (marquee.additive ? [...new Set([...current, ...inside])] : inside))
+        setSelectedId(null)
+        setSelectedDrawing(null)
+        setSelectedTextId(null)
+        suppressFieldClickRef.current = true
+      }
+      setMarquee(null)
+    }
+    if (groupDrag) {
+      setGroupDrag(null)
+      setMultiSelectedIds([])
+    }
     setDragId(null)
     setDragTextId(null)
     setDragTextOffset(null)
   }
 
   function handleKeyDown(event) {
+    if (event.key === 'Escape' && multiSelectedIds.length > 0) {
+      setMultiSelectedIds([])
+      return
+    }
     if (event.key === 'Escape' && activeChain) {
       setActiveChain(null)
       setCursorPos(null)
@@ -675,7 +889,8 @@ export function PlayDesigner({ record, onClose }) {
   const allDrawings = flattenDrawings(drawings)
   const chainAnchor = activeChain ? drawingAnchor(activeChain) : null
   const selectedMarker = markers.find((marker) => marker.id === selectedId)
-  const appearanceEnabled = Boolean(selectedMarker && activeTool === 'select')
+  const multiSelectMode = multiSelectedIds.length > 0
+  const appearanceEnabled = Boolean(selectedMarker && activeTool === 'select' && !multiSelectMode)
   const selectedPath = selectedDrawing && (drawings[selectedDrawing.type] || []).find((drawing) => drawing.id === selectedDrawing.id)
   const selectedPathTool = selectedPath && DRAWING_TOOLS.find((tool) => tool.id === selectedDrawing.type)
   const pathAppearanceVisible = Boolean(selectedPath && selectedPathTool && activeTool === 'select')
@@ -692,6 +907,7 @@ export function PlayDesigner({ record, onClose }) {
         className={`play-designer-tool${tool.id === 'select' ? ' select-tool' : ''}${tool.id === activeTool ? ' active' : ''}`}
         onClick={() => {
           setActiveTool(tool.id)
+          setMultiSelectedIds([])
           setActiveChain(null)
           setCursorPos(null)
         }}
@@ -739,7 +955,17 @@ export function PlayDesigner({ record, onClose }) {
       {error && <p className="data-grid-status data-grid-error">{error}</p>}
       {printOpen && (
         <PrintPreviewDialog
-          play={{ name: activeSlideId ? activeSlideTitle : name, markers, drawings, textAnnotations, theme, fieldDecoration, fieldOrientation }}
+          play={{
+            name: activeSlideId ? activeSlideTitle : name,
+            markers,
+            drawings,
+            textAnnotations,
+            theme,
+            fieldDecoration,
+            fieldOrientation,
+            fieldZone,
+            perspective,
+          }}
           onClose={() => setPrintOpen(false)}
         />
       )}
@@ -761,6 +987,26 @@ export function PlayDesigner({ record, onClose }) {
               <span>Field Decoration</span>
               <select value={draftFieldDecoration} onChange={(event) => setDraftFieldDecoration(event.target.value)}>
                 {FIELD_DECORATIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="dialog-field">
+              <span>Field Zone</span>
+              <select value={draftFieldZone} onChange={(event) => setDraftFieldZone(event.target.value)}>
+                {FIELD_ZONES.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="dialog-field">
+              <span>Perspective</span>
+              <select value={draftPerspective} onChange={(event) => setDraftPerspective(event.target.value)}>
+                {PLAY_PERSPECTIVES.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
@@ -854,6 +1100,14 @@ export function PlayDesigner({ record, onClose }) {
               </button>
               <button type="button" role="menuitem" onClick={restartPlay}>
                 Restart Play
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={restartAdjustment}
+                disabled={!activeSlideId || saving || Boolean(removingSlideId)}
+              >
+                Restart Adjustment
               </button>
               <button
                 type="button"
@@ -1016,11 +1270,13 @@ export function PlayDesigner({ record, onClose }) {
         <div className="player-appearance-group" role="group" aria-label="Player decoration">
           {PLAYER_DECORATIONS.map((decoration) => {
             const isActive = appearanceEnabled && (selectedMarker.decoration || 'solid') === decoration.id
+            const previewColor = selectedMarker?.color || (selectedMarker?.team === 'defense' ? '#b91c1c' : '#1d4ed8')
             return (
               <button
                 key={decoration.id}
                 type="button"
                 className={`player-decoration-option ${decoration.id}${isActive ? ' active' : ''}`}
+                style={decorationPreviewVars(previewColor)}
                 onClick={() => updateMarkerAppearance(selectedMarker.id, { decoration: decoration.id })}
                 aria-label={decoration.label}
                 aria-pressed={isActive}
@@ -1035,9 +1291,10 @@ export function PlayDesigner({ record, onClose }) {
       <div
         ref={fieldRef}
         id="play-designer-field"
-        className={`play-designer-field${activeTool !== 'select' ? ' drawing' : ''}${themeClass}`}
+        className={`play-designer-field${activeTool !== 'select' ? ' drawing' : ''}${themeClass} zone-windowed`}
         onClick={handleFieldClick}
         onDoubleClick={handleFieldDoubleClick}
+        onPointerDown={handleFieldPointerDown}
         onPointerMove={handleFieldPointerMove}
         onPointerUp={handleFieldPointerUp}
         onPointerLeave={handleFieldPointerUp}
@@ -1046,19 +1303,54 @@ export function PlayDesigner({ record, onClose }) {
         role="application"
         aria-label="Play field"
       >
-        {fieldDecoration !== FIELD_DECORATIONS[0] && (
+        <span className="play-designer-los-line" style={{ top: `${losPercent}%` }} aria-hidden="true" />
+        {endZoneBands.map((band) => (
+          <div
+            key={`${band.top}-${band.height}`}
+            className="play-designer-end-zone"
+            style={{ top: `${band.top}%`, height: `${band.height}%` }}
+            aria-hidden="true"
+          />
+        ))}
+        {goalLinePositions.map((top) => (
+          <span key={top} className="play-designer-goal-line" style={{ top: `${top}%` }} aria-hidden="true" />
+        ))}
+        {showHashMarks && (
           <div className="play-designer-hash-marks" aria-hidden="true">
-            {HASH_MARK_Y_POSITIONS.flatMap((top) =>
-              hashXPositions.map((left) => (
+            {hashYPositions.flatMap((top) =>
+              hashXPositions.map((left, index) => (
                 <span
                   key={`${top}-${left}`}
-                  className="play-designer-hash-mark"
+                  className={`play-designer-hash-mark${index === 0 || index === hashXPositions.length - 1 ? ' sideline' : ''}`}
                   style={{ left: `${left}%`, top: `${top}%` }}
                 />
               )),
             )}
           </div>
         )}
+        {showYardNumbers &&
+          yardNumbers.map((number) =>
+            yardNumberX.map((left, side) => (
+              <span key={`${number.yard}-${left}`}>
+                <span
+                  className={`play-designer-yard-number ${side === 0 ? 'left' : 'right'}`}
+                  style={{ left: `${left}%`, top: `${number.percent}%` }}
+                  aria-hidden="true"
+                >
+                  {number.label}
+                </span>
+                {number.arrow && (
+                  <span
+                    className={`play-designer-yard-arrow ${number.arrow}`}
+                    style={{ left: `${left}%`, top: `${number.percent}%` }}
+                    aria-hidden="true"
+                  >
+                    {number.arrow === 'up' ? '▲' : '▼'}
+                  </span>
+                )}
+              </span>
+            )),
+          )}
         {isEmpty && (
           <p className="play-designer-hint">
             Drag players to reposition them. Pick a tool, click a player to anchor a line, click to add
@@ -1218,19 +1510,43 @@ export function PlayDesigner({ record, onClose }) {
             )
           })()}
         </svg>
-        {markers.map((marker) => (
-          <button
-            key={marker.id}
-            type="button"
-            className={`play-designer-marker ${marker.team || 'offense'} ${marker.decoration || 'solid'}${marker.color ? ' color-override' : ''}${marker.id === selectedId ? ' selected' : ''}${activeTool !== 'select' && activeTool !== 'dtb' ? ' anchorable' : ''}${themeClass}`}
-            style={markerStyleVars(marker)}
-            onPointerDown={(event) => handleMarkerPointerDown(event, marker.id)}
-            onClick={(event) => handleMarkerClick(event, marker.id)}
-            aria-label="Player marker"
-          >
-            {marker.label}
-          </button>
-        ))}
+        {markers.map((marker) => {
+          const animation = playerAnimation?.players[marker.id]
+          const progress = playerAnimation?.progress || 0
+          const easedProgress = progress * progress * (3 - 2 * progress)
+          const displayMarker = animation
+            ? {
+                ...marker,
+                x: animation.fromX + (animation.toX - animation.fromX) * easedProgress,
+                y: animation.fromY + (animation.toY - animation.fromY) * easedProgress,
+              }
+            : marker
+          return (
+            <button
+              key={marker.id}
+              type="button"
+              className={`play-designer-marker ${marker.team || 'offense'} ${marker.decoration || 'solid'}${marker.color ? ' color-override' : ''}${marker.id === selectedId || multiSelectedIds.includes(marker.id) ? ' selected' : ''}${activeTool !== 'select' && activeTool !== 'dtb' ? ' anchorable' : ''}${themeClass}`}
+              style={markerStyleVars(displayMarker)}
+              onPointerDown={(event) => handleMarkerPointerDown(event, marker.id)}
+              onClick={(event) => handleMarkerClick(event, marker.id)}
+              aria-label="Player marker"
+            >
+              {marker.label}
+            </button>
+          )
+        })}
+        {marquee?.active && (
+          <div
+            className="play-designer-marquee"
+            style={{
+              left: `${Math.min(marquee.start.x, marquee.end.x)}%`,
+              top: `${Math.min(marquee.start.y, marquee.end.y)}%`,
+              width: `${Math.abs(marquee.end.x - marquee.start.x)}%`,
+              height: `${Math.abs(marquee.end.y - marquee.start.y)}%`,
+            }}
+            aria-hidden="true"
+          />
+        )}
       </div>
       {record.kind === 'play' && (
         <>
@@ -1264,6 +1580,16 @@ export function PlayDesigner({ record, onClose }) {
                     title={title}
                   >
                     <span>{title}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="play-designer-tab-action"
+                    aria-label={`Run ${title}`}
+                    title={`Run ${title}`}
+                    onClick={() => runAdjustment(slide)}
+                    disabled={saving || Boolean(removingSlideId)}
+                  >
+                    <Play size={14} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
