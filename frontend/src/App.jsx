@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BookOpen, ClipboardList, Route, ScanSearch, Settings } from 'lucide-react'
+import { BookOpen, ClipboardList, Copy, FolderOpen, Printer, Route, ScanSearch, Settings, Trash2, UserRound } from 'lucide-react'
 import { api } from './api'
 import { renderCategoryBadge } from './components/CategoryBadge'
 import { DataGrid } from './components/DataGrid'
@@ -111,8 +111,8 @@ function AppBar({ activeView, onNavigate, user }) {
               <strong>{user.name}</strong>
               <span>{user.roles.join(', ')}</span>
             </div>
-            <a href="#profile" role="menuitem">Profile</a>
-            <a href="#settings" role="menuitem">Settings</a>
+            <a href="#profile" role="menuitem"><UserRound className="menu-item-icon" aria-hidden="true" />Profile</a>
+            <a href="#settings" role="menuitem"><Settings className="menu-item-icon" aria-hidden="true" />Settings</a>
           </div>
         )}
       </div>}
@@ -289,7 +289,7 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
         fetchRows={fetchRows}
         onNew={onNew}
         newLabel={newLabel}
-        menuItems={[{ label: `Print ${parentLabel}...`, onClick: onPrintAll }]}
+        menuItems={[{ label: `Print ${parentLabel}...`, icon: Printer, onClick: onPrintAll }]}
         onRowDoubleClick={onOpenPlay}
         rowActions={rowActions}
       />
@@ -372,10 +372,10 @@ function App() {
 
   function collectionRowActions(kind) {
     return (row) => [
-      { key: 'open', label: 'Open', onClick: (item) => setParent({ ...item, kind }) },
-      { key: 'copy', label: 'Copy', onClick: (item) => handleCopyCollection(kind, item) },
-      { key: 'print', label: 'Print...', onClick: (item) => handlePrintCollection(kind, item) },
-      { key: 'delete', label: 'Delete', destructive: true, onClick: (item) => handleDeleteCollection(kind, item) },
+      { key: 'open', label: 'Open', icon: FolderOpen, onClick: (item) => setParent({ ...item, kind }) },
+      { key: 'copy', label: 'Copy', icon: Copy, onClick: (item) => handleCopyCollection(kind, item) },
+      { key: 'print', label: 'Print...', icon: Printer, onClick: (item) => handlePrintCollection(kind, item) },
+      { key: 'delete', label: 'Delete', icon: Trash2, destructive: true, onClick: (item) => handleDeleteCollection(kind, item) },
     ]
   }
 
@@ -416,6 +416,7 @@ function App() {
       initialMarkers: record.markers || initialMarkers,
       initialDrawings: record.drawings,
       initialTextAnnotations: record.textAnnotations,
+      initialZones: record.zones,
       initialTheme: record.theme,
       template: record.template,
       category: record.category,
@@ -436,6 +437,7 @@ function App() {
       initialMarkers: row.markers || buildMarkersFromTemplate(template),
       initialDrawings: row.drawings,
       initialTextAnnotations: row.textAnnotations,
+      initialZones: row.zones,
       initialTheme: row.theme,
       template: row.template,
       category: row.category,
@@ -459,6 +461,7 @@ function App() {
       markers: row.markers,
       drawings: row.drawings,
       textAnnotations: row.textAnnotations,
+      zones: row.zones,
     }
     if (kind === 'play') {
       await api.createPlay(parentId, payload)
@@ -482,10 +485,10 @@ function App() {
 
   function playRowActions(kind, parentId) {
     return (row) => [
-      { key: 'open', label: 'Open', onClick: (r) => openDesignerForRow(kind, parentId, r) },
-      { key: 'copy', label: 'Copy', onClick: (r) => handleCopyPlay(kind, parentId, r) },
-      { key: 'print', label: 'Print...', onClick: (r) => setPrintPlay({ ...r, perspective: r.perspective || defaultPlayPerspective(parent?.category) }) },
-      { key: 'delete', label: 'Delete', destructive: true, onClick: (r) => handleDeletePlay(kind, parentId, r) },
+      { key: 'open', label: 'Open', icon: FolderOpen, onClick: (r) => openDesignerForRow(kind, parentId, r) },
+      { key: 'copy', label: 'Copy', icon: Copy, onClick: (r) => handleCopyPlay(kind, parentId, r) },
+      { key: 'print', label: 'Print...', icon: Printer, onClick: (r) => setPrintPlay({ ...r, perspective: r.perspective || defaultPlayPerspective(parent?.category) }) },
+      { key: 'delete', label: 'Delete', icon: Trash2, destructive: true, onClick: (r) => handleDeletePlay(kind, parentId, r) },
     ]
   }
 

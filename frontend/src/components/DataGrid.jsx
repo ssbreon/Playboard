@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Search } from 'lucide-react'
+import { RefreshCw, Search } from 'lucide-react'
 import { getCategoryBadgeStyle } from './CategoryBadge'
 
 const PAGE_SIZE = 50
@@ -83,7 +83,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
   const currentPage = Math.min(page, totalPages - 1)
   const pageRows = filteredRows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE)
 
-  const dropdownItems = [{ label: 'Refresh', onClick: () => setRefreshToken((t) => t + 1) }, ...menuItems]
+  const dropdownItems = [{ label: 'Refresh', icon: RefreshCw, onClick: () => setRefreshToken((t) => t + 1) }, ...menuItems]
 
   return (
     <section className="data-grid">
@@ -166,6 +166,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                     setMenuOpen(false)
                   }}
                 >
+                  {item.icon && <item.icon className="menu-item-icon" aria-hidden="true" />}
                   {item.label}
                 </button>
               ))}
@@ -255,6 +256,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                                       item.onClick(row)
                                     }}
                                   >
+                                    {item.icon && <item.icon className="menu-item-icon" aria-hidden="true" />}
                                     {item.label}
                                   </button>
                                 ))}

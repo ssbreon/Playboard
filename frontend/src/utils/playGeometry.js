@@ -168,6 +168,39 @@ export function normalizeTextAnnotations(source) {
   return Array.isArray(source) ? source : []
 }
 
+export const ZONE_FILLS = [
+  { id: 'red', label: 'Light red', color: 'rgba(248, 113, 113, 0.35)' },
+  { id: 'green', label: 'Light green', color: 'rgba(134, 239, 172, 0.4)' },
+  { id: 'blue', label: 'Light blue', color: 'rgba(96, 165, 250, 0.4)' },
+  { id: 'transparent', label: 'Transparent', color: 'transparent' },
+]
+
+export const ZONE_SHAPES = [
+  { id: 'oval', label: 'Oval' },
+  { id: 'rectangle', label: 'Rectangle' },
+]
+
+export const DEFAULT_ZONE_FILL = 'blue'
+export const MIN_ZONE_SIZE = 4
+
+export function normalizeZones(source) {
+  return Array.isArray(source) ? source : []
+}
+
+export function zoneFillColor(zone) {
+  return (ZONE_FILLS.find((fill) => fill.id === zone.fill) || ZONE_FILLS.find((fill) => fill.id === DEFAULT_ZONE_FILL)).color
+}
+
+// Zones are stored as a center point plus width/height, all in field percent coordinates.
+export function zoneBoxStyle(zone) {
+  return {
+    left: `${zone.x - zone.width / 2}%`,
+    top: `${zone.y - zone.height / 2}%`,
+    width: `${zone.width}%`,
+    height: `${zone.height}%`,
+  }
+}
+
 export function toolColor(tool, theme) {
   return theme.strokeColor || tool.color
 }
@@ -272,7 +305,8 @@ export function textAnnotationWidth(annotation, fieldEl) {
   const style = window.getComputedStyle(fieldEl)
   const fontSize = annotation.fontSize ? `${annotation.fontSize}px` : style.fontSize
   context.font = `${annotation.italic ? 'italic ' : ''}${annotation.bold ? '700 ' : ''}${fontSize} ${style.fontFamily}`
-  return Math.max(134, Math.ceil(context.measureText(annotation.text || 'Enter text').width))
+  const lineWidths = (annotation.text || 'Enter text').split('\n').map((line) => context.measureText(line).width)
+  return Math.max(134, Math.ceil(Math.max(...lineWidths)))
 }
 
 // White and charcoal are handled as special guideline colors (white maps its decoration to

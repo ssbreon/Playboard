@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Pencil, Play, Plus, X } from 'lucide-react'
+import { Check, FlipHorizontal2, FlipVertical2, Pencil, Play, Plus, Printer, RotateCcw, Undo2, X } from 'lucide-react'
 import { api } from '../api'
 import { FIELD_DECORATIONS, FIELD_ORIENTATIONS, PLAY_CATEGORIES } from './NewPlayDialog'
 import { PrintPreviewDialog } from './PrintPreviewDialog'
@@ -25,6 +25,7 @@ import {
   markerStyleVars,
   normalizeDrawings,
   normalizeTextAnnotations,
+  normalizeZones,
   pathData,
   tbarCapPoints,
   textAnnotationStyle,
@@ -33,15 +34,21 @@ import {
   toolDash as resolveToolDash,
   yardNumberXPositions,
   yardNumbersForWindow,
+  DEFAULT_ZONE_FILL,
+  MIN_ZONE_SIZE,
+  ZONE_FILLS,
+  ZONE_SHAPES,
+  zoneBoxStyle,
+  zoneFillColor,
 } from '../utils/playGeometry'
 
 const TOOL_ICONS = {
   select: <path fill="currentColor" d="M6 3v18l4.6-4.6L13.2 21l2.6-1.4-2.6-4.6L18 13.4z" />,
-  block: <path stroke="currentColor" strokeWidth="2" fill="none" d="M4 20 20 4M4 12h16M12 4v16" />,
-  dtb: <path stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="2 3" fill="none" d="M4 20 20 4M4 12h16M12 4v16" />,
-  route: <path stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" d="M4 20 12 8 20 20M12 8V3" />,
-  blitz: <path stroke="currentColor" strokeWidth="2" fill="none" strokeDasharray="4 3" strokeLinecap="round" d="M4 20 20 4" />,
-  coverage: <path stroke="currentColor" strokeWidth="2" fill="none" strokeDasharray="1 4" strokeLinecap="round" d="M4 12h16" />,
+  block: <path stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" d="M5 19 15 9M11 5l8 8" />,
+  dtb: <g stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"><path strokeDasharray="1 3" d="M5 19 15 9" /><path d="M11 5l8 8" /></g>,
+  route: <g stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M5 19 19 5" /><path d="M13 5h6v6" /></g>,
+  blitz: <g stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"><path strokeDasharray="4 3" d="M5 19 19 5" /><path d="M13 5h6v6" /></g>,
+  coverage: <g stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"><path strokeDasharray="1 3" d="M5 19 19 5" /><path d="M13 5h6v6" /></g>,
 }
 
 const PLAYER_COLORS = ['#ffffff', '#1d4ed8', '#b91c1c', '#15803d', '#f59e0b', '#7c3aed', '#374151']
@@ -59,12 +66,23 @@ const PLAYER_DECORATIONS = [
   { id: 'vertical-line', label: 'Vertical line' },
 ]
 const MAX_ADJUSTMENT_SLIDES = 3
+const ZONE_HANDLES = [
+  { id: 'nw', left: 0, top: 0 },
+  { id: 'n', left: 50, top: 0 },
+  { id: 'ne', left: 100, top: 0 },
+  { id: 'e', left: 100, top: 50 },
+  { id: 'se', left: 100, top: 100 },
+  { id: 's', left: 50, top: 100 },
+  { id: 'sw', left: 0, top: 100 },
+  { id: 'w', left: 0, top: 50 },
+]
 
 function adjustmentDesign(slide, fallback) {
   return {
     markers: Array.isArray(slide.markers) ? slide.markers : fallback.markers,
     drawings: normalizeDrawings(slide.drawings || fallback.drawings),
     textAnnotations: normalizeTextAnnotations(slide.textAnnotations || fallback.textAnnotations),
+    zones: normalizeZones(slide.zones || fallback.zones),
     templateId: slide.template || fallback.templateId,
     category: slide.category || fallback.category,
     fieldDecoration: slide.fieldDecoration || fallback.fieldDecoration,
@@ -89,6 +107,7 @@ export function PlayDesigner({ record, onClose }) {
   const [markers, setMarkers] = useState(record.initialMarkers || [])
   const [drawings, setDrawings] = useState(normalizeDrawings(record.initialDrawings))
     const [textAnnotations, setTextAnnotations] = useState(normalizeTextAnnotations(record.initialTextAnnotations))
+  const [zones, setZones] = useState(normalizeZones(record.initialZones))
   const [templateId, setTemplateId] = useState(initialTemplateId)
   const [category, setCategory] = useState(initialCategory)
   const [fieldDecoration, setFieldDecoration] = useState(initialFieldDecoration)
@@ -99,6 +118,8 @@ export function PlayDesigner({ record, onClose }) {
   const [selectedId, setSelectedId] = useState(null)
   const [selectedDrawing, setSelectedDrawing] = useState(null)
   const [selectedTextId, setSelectedTextId] = useState(null)
+  const [selectedZoneId, setSelectedZoneId] = useState(null)
+  const [zoneDrag, setZoneDrag] = useState(null)
   const [hoveredBlockCapId, setHoveredBlockCapId] = useState(null)
   const [dragId, setDragId] = useState(null)
   const [multiSelectedIds, setMultiSelectedIds] = useState([])
@@ -111,6 +132,7 @@ export function PlayDesigner({ record, onClose }) {
   const [activeChain, setActiveChain] = useState(null)
   const [cursorPos, setCursorPos] = useState(null)
   const [drawHistory, setDrawHistory] = useState([])
+  const [redoHistory, setRedoHistory] = useState([])
     const [editingTextId, setEditingTextId] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -126,6 +148,7 @@ export function PlayDesigner({ record, onClose }) {
   const [savedMarkers, setSavedMarkers] = useState(record.initialMarkers || [])
   const [savedDrawings, setSavedDrawings] = useState(normalizeDrawings(record.initialDrawings))
     const [savedTextAnnotations, setSavedTextAnnotations] = useState(normalizeTextAnnotations(record.initialTextAnnotations))
+  const [savedZones, setSavedZones] = useState(normalizeZones(record.initialZones))
   const [savedTemplateId, setSavedTemplateId] = useState(initialTemplateId)
   const [savedCategory, setSavedCategory] = useState(initialCategory)
   const [savedFieldDecoration, setSavedFieldDecoration] = useState(initialFieldDecoration)
@@ -215,6 +238,7 @@ export function PlayDesigner({ record, onClose }) {
     markers: savedMarkers,
     drawings: savedDrawings,
     textAnnotations: savedTextAnnotations,
+    zones: savedZones,
     templateId: savedTemplateId,
     category: savedCategory,
     fieldDecoration: savedFieldDecoration,
@@ -228,6 +252,7 @@ export function PlayDesigner({ record, onClose }) {
     markers,
     drawings,
     textAnnotations,
+    zones,
     templateId,
     category,
     fieldDecoration,
@@ -245,6 +270,7 @@ export function PlayDesigner({ record, onClose }) {
 
   const canUndoDrawing =
     isDirty && drawHistory.some((entry) => (drawings[entry.type] || []).some((drawing) => drawing.id === entry.id))
+  const canRedoDrawing = redoHistory.length > 0
 
   function captureCurrentDraft() {
     return { ...currentDesign, name, title: activeSlideTitle }
@@ -254,6 +280,7 @@ export function PlayDesigner({ record, onClose }) {
     setMarkers(design.markers)
     setDrawings(normalizeDrawings(design.drawings))
     setTextAnnotations(normalizeTextAnnotations(design.textAnnotations))
+    setZones(normalizeZones(design.zones))
     setTemplateId(design.templateId)
     setCategory(design.category)
     setFieldDecoration(design.fieldDecoration)
@@ -265,12 +292,14 @@ export function PlayDesigner({ record, onClose }) {
     setMultiSelectedIds([])
     setSelectedDrawing(null)
     setSelectedTextId(null)
+    setSelectedZoneId(null)
     setEditingTextId(null)
     setActiveTool('select')
     setHoveredBlockCapId(null)
     setActiveChain(null)
     setCursorPos(null)
     setDrawHistory([])
+    setRedoHistory([])
   }
 
   function activateSlide(slideId) {
@@ -349,6 +378,7 @@ export function PlayDesigner({ record, onClose }) {
         markers,
         drawings,
         textAnnotations,
+        zones,
         template: templateId,
         category,
         fieldDecoration,
@@ -374,6 +404,7 @@ export function PlayDesigner({ record, onClose }) {
         setSavedMarkers(markers)
         setSavedDrawings(drawings)
         setSavedTextAnnotations(textAnnotations)
+        setSavedZones(zones)
         setSavedTemplateId(templateId)
         setSavedCategory(category)
         setSavedFieldDecoration(fieldDecoration)
@@ -418,6 +449,7 @@ export function PlayDesigner({ record, onClose }) {
         markers,
         drawings,
         textAnnotations,
+        zones,
         template: templateId,
         category,
         fieldDecoration,
@@ -472,17 +504,42 @@ export function PlayDesigner({ record, onClose }) {
     const history = [...drawHistory]
     while (history.length > 0) {
       const last = history.pop()
-      if ((drawings[last.type] || []).some((drawing) => drawing.id === last.id)) {
+      const drawing = (drawings[last.type] || []).find((item) => item.id === last.id)
+      if (drawing) {
+        const removedDrawings = [{ type: last.type, drawing }]
+        if (last.type === 'block') {
+          removedDrawings.push(...drawings.dtb
+            .filter((item) => item.blockId === last.id)
+            .map((item) => ({ type: 'dtb', drawing: item })))
+        }
         setDrawings((current) => ({
           ...current,
           [last.type]: current[last.type].filter((drawing) => drawing.id !== last.id),
           ...(last.type === 'block' && { dtb: current.dtb.filter((drawing) => drawing.blockId !== last.id) }),
         }))
+        setRedoHistory((current) => [...current, { entry: last, drawings: removedDrawings }])
         setSelectedDrawing(null)
         break
       }
     }
     setDrawHistory(history)
+  }
+
+  function redoLastDrawing() {
+    const history = [...redoHistory]
+    const action = history.pop()
+    if (!action) return
+    setDrawings((current) => {
+      const next = { ...current }
+      for (const { type, drawing } of action.drawings) {
+        if (!next[type].some((item) => item.id === drawing.id)) {
+          next[type] = [...next[type], drawing]
+        }
+      }
+      return next
+    })
+    setDrawHistory((current) => [...current, action.entry])
+    setRedoHistory(history)
   }
 
   function openSettings() {
@@ -510,6 +567,8 @@ export function PlayDesigner({ record, onClose }) {
       setMarkers(buildMarkersFromTemplate(template))
       setDrawings(normalizeDrawings())
         setTextAnnotations([])
+        setZones([])
+        setSelectedZoneId(null)
         setSelectedTextId(null)
         setEditingTextId(null)
       setSelectedId(null)
@@ -517,6 +576,7 @@ export function PlayDesigner({ record, onClose }) {
       setActiveChain(null)
       setCursorPos(null)
       setDrawHistory([])
+      setRedoHistory([])
     }
     setSettingsOpen(false)
   }
@@ -542,6 +602,10 @@ export function PlayDesigner({ record, onClose }) {
         axis === 'horizontal' ? { ...annotation, x: 100 - annotation.x } : { ...annotation, y: 100 - annotation.y },
       ),
     )
+    setZones((current) =>
+      current.map((zone) => (axis === 'horizontal' ? { ...zone, x: 100 - zone.x } : { ...zone, y: 100 - zone.y })),
+    )
+    setSelectedZoneId(null)
     if (axis === 'vertical') {
       setPerspective((current) => (current === PLAY_PERSPECTIVES[0] ? PLAY_PERSPECTIVES[1] : PLAY_PERSPECTIVES[0]))
     }
@@ -559,6 +623,8 @@ export function PlayDesigner({ record, onClose }) {
     setMarkers(buildMarkersFromTemplate(template))
     setDrawings(normalizeDrawings())
     setTextAnnotations([])
+    setZones([])
+    setSelectedZoneId(null)
     setSelectedId(null)
     setMultiSelectedIds([])
     setSelectedDrawing(null)
@@ -567,6 +633,7 @@ export function PlayDesigner({ record, onClose }) {
     setActiveChain(null)
     setCursorPos(null)
     setDrawHistory([])
+    setRedoHistory([])
   }
 
   function restartAdjustment() {
@@ -588,7 +655,48 @@ export function PlayDesigner({ record, onClose }) {
     setTextAnnotations((current) => [...current, { id, text: '', x: 50, y: 5 }])
     setEditingTextId(id)
     setSelectedTextId(id)
+    setSelectedZoneId(null)
     setActiveTool('select')
+  }
+
+  function addZone() {
+    const id = crypto.randomUUID()
+    setZones((current) => [...current, { id, x: 50, y: 30, width: 20, height: 14, shape: 'oval', fill: DEFAULT_ZONE_FILL, border: true }])
+    setSelectedZoneId(id)
+    setSelectedId(null)
+    setMultiSelectedIds([])
+    setSelectedDrawing(null)
+    setSelectedTextId(null)
+    setEditingTextId(null)
+    setActiveTool('select')
+    setActiveChain(null)
+    setCursorPos(null)
+  }
+
+  function handleZonePointerDown(event, zone, handle = null) {
+    if (activeTool !== 'select' || event.button !== 0) return
+    event.stopPropagation()
+    const fieldRect = fieldRef.current?.getBoundingClientRect()
+    if (!fieldRect) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setSelectedZoneId(zone.id)
+    setSelectedId(null)
+    setMultiSelectedIds([])
+    setSelectedDrawing(null)
+    setSelectedTextId(null)
+    setZoneDrag({
+      id: zone.id,
+      handle,
+      start: {
+        x: ((event.clientX - fieldRect.left) / fieldRect.width) * 100,
+        y: ((event.clientY - fieldRect.top) / fieldRect.height) * 100,
+      },
+      origin: { x: zone.x, y: zone.y, width: zone.width, height: zone.height },
+    })
+  }
+
+  function updateZoneAppearance(id, updates) {
+    setZones((current) => current.map((zone) => (zone.id === id ? { ...zone, ...updates } : zone)))
   }
 
   function handleTextPointerDown(event, id) {
@@ -602,6 +710,7 @@ export function PlayDesigner({ record, onClose }) {
     }
     setSelectedId(null)
     setSelectedDrawing(null)
+    setSelectedZoneId(null)
     setSelectedTextId(id)
     setDragTextId(id)
   }
@@ -634,6 +743,7 @@ export function PlayDesigner({ record, onClose }) {
       setSelectedId(null)
       setSelectedDrawing(null)
       setSelectedTextId(null)
+      setSelectedZoneId(null)
       return
     }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -657,6 +767,7 @@ export function PlayDesigner({ record, onClose }) {
     setSelectedId(id)
     setSelectedDrawing(null)
       setSelectedTextId(null)
+    setSelectedZoneId(null)
     setDragId(id)
   }
 
@@ -698,6 +809,7 @@ export function PlayDesigner({ record, onClose }) {
     setSelectedDrawing({ type, id })
     setSelectedId(null)
     setSelectedTextId(null)
+    setSelectedZoneId(null)
   }
 
   function handleBlockCapClick(event, drawing) {
@@ -722,6 +834,7 @@ export function PlayDesigner({ record, onClose }) {
       setMultiSelectedIds([])
       setSelectedDrawing(null)
       setSelectedTextId(null)
+      setSelectedZoneId(null)
       return
     }
     if (!activeChain) return
@@ -745,6 +858,7 @@ export function PlayDesigner({ record, onClose }) {
         : { id: crypto.randomUUID(), anchorId: activeChain.anchorId, points }
       setDrawings((current) => ({ ...current, [activeChain.type]: [...current[activeChain.type], newDrawing] }))
       setDrawHistory((current) => [...current, { type: activeChain.type, id: newDrawing.id }])
+      setRedoHistory([])
     }
     setActiveChain(null)
     setCursorPos(null)
@@ -791,6 +905,29 @@ export function PlayDesigner({ record, onClose }) {
       setMarkers((current) => current.map((marker) => (marker.id === dragId ? { ...marker, x, y } : marker)))
       return
     }
+    if (zoneDrag) {
+      const { x, y } = positionFromEvent(event)
+      const { origin, start, handle } = zoneDrag
+      let next
+      if (!handle) {
+        next = {
+          x: Math.min(100, Math.max(0, origin.x + x - start.x)),
+          y: Math.min(100, Math.max(0, origin.y + y - start.y)),
+        }
+      } else {
+        let left = origin.x - origin.width / 2
+        let right = origin.x + origin.width / 2
+        let top = origin.y - origin.height / 2
+        let bottom = origin.y + origin.height / 2
+        if (handle.includes('w')) left = Math.min(x, right - MIN_ZONE_SIZE)
+        if (handle.includes('e')) right = Math.max(x, left + MIN_ZONE_SIZE)
+        if (handle.includes('n')) top = Math.min(y, bottom - MIN_ZONE_SIZE)
+        if (handle.includes('s')) bottom = Math.max(y, top + MIN_ZONE_SIZE)
+        next = { x: (left + right) / 2, y: (top + bottom) / 2, width: right - left, height: bottom - top }
+      }
+      setZones((current) => current.map((zone) => (zone.id === zoneDrag.id ? { ...zone, ...next } : zone)))
+      return
+    }
     if (dragTextId) {
       const { x, y } = positionFromEvent(event)
       const offset = dragTextOffset || { x: 0, y: 0 }
@@ -820,6 +957,7 @@ export function PlayDesigner({ record, onClose }) {
         setSelectedId(null)
         setSelectedDrawing(null)
         setSelectedTextId(null)
+        setSelectedZoneId(null)
         suppressFieldClickRef.current = true
       }
       setMarquee(null)
@@ -831,6 +969,7 @@ export function PlayDesigner({ record, onClose }) {
     setDragId(null)
     setDragTextId(null)
     setDragTextOffset(null)
+    setZoneDrag(null)
   }
 
   function handleKeyDown(event) {
@@ -868,6 +1007,9 @@ export function PlayDesigner({ record, onClose }) {
       setTextAnnotations((current) => current.filter((annotation) => annotation.id !== selectedTextId))
       setSelectedTextId(null)
       setEditingTextId(null)
+    } else if (selectedZoneId) {
+      setZones((current) => current.filter((zone) => zone.id !== selectedZoneId))
+      setSelectedZoneId(null)
     }
   }
   function tbarCap(points) {
@@ -897,14 +1039,16 @@ export function PlayDesigner({ record, onClose }) {
   const selectedText = textAnnotations.find((annotation) => annotation.id === selectedTextId)
   const textAppearanceVisible = Boolean(selectedText && activeTool === 'select')
   const defaultTextColor = activeTheme.fieldClass === 'printer-friendly' ? '#000000' : '#ffffff'
-  const isEmpty = markers.length === 0 && allDrawings.length === 0 && textAnnotations.length === 0
+  const selectedZone = zones.find((zone) => zone.id === selectedZoneId)
+  const zoneAppearanceVisible = Boolean(selectedZone && activeTool === 'select')
+  const isEmpty = markers.length === 0 && allDrawings.length === 0 && textAnnotations.length === 0 && zones.length === 0
 
   function toolButton(tool) {
     return (
       <button
         key={tool.id}
         type="button"
-        className={`play-designer-tool${tool.id === 'select' ? ' select-tool' : ''}${tool.id === activeTool ? ' active' : ''}`}
+        className={`play-designer-tool${tool.id === 'select' ? ' select-tool' : ' path-tool'}${tool.id === activeTool ? ' active' : ''}`}
         onClick={() => {
           setActiveTool(tool.id)
           setMultiSelectedIds([])
@@ -912,12 +1056,13 @@ export function PlayDesigner({ record, onClose }) {
           setCursorPos(null)
         }}
         aria-pressed={tool.id === activeTool}
+        aria-label={tool.id === 'dtb' ? 'Double-team To Backer' : tool.label}
         title={tool.id === 'dtb' ? 'Double-team To Backer' : tool.label}
       >
         <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
           {TOOL_ICONS[tool.id]}
         </svg>
-        <span>{tool.label}</span>
+        {tool.id === 'select' && <span>{tool.label}</span>}
       </button>
     )
   }
@@ -960,6 +1105,7 @@ export function PlayDesigner({ record, onClose }) {
             markers,
             drawings,
             textAnnotations,
+            zones,
             theme,
             fieldDecoration,
             fieldOrientation,
@@ -1058,6 +1204,32 @@ export function PlayDesigner({ record, onClose }) {
         {toolButton(DRAWING_TOOLS[0])}
         <div className="play-designer-drawing-tools" role="group" aria-label="Path tools">
           {DRAWING_TOOLS.slice(1).map(toolButton)}
+          <div className="play-designer-history-tools" role="group" aria-label="Drawing history">
+            <button
+              type="button"
+              className="play-designer-tool"
+              onClick={undoLastDrawing}
+              disabled={!canUndoDrawing}
+              title="Undo"
+            >
+              <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+                <path fill="currentColor" d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z" />
+              </svg>
+              <span>Undo</span>
+            </button>
+            <button
+              type="button"
+              className="play-designer-tool"
+              onClick={redoLastDrawing}
+              disabled={!canRedoDrawing}
+              title="Redo"
+            >
+              <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+                <path fill="currentColor" d="M12 5V1l5 5-5 5V7a6 6 0 1 0 6 6h2a8 8 0 1 1-8-8z" />
+              </svg>
+              <span>Redo</span>
+            </button>
+          </div>
         </div>
         <button type="button" className="play-designer-tool" onClick={addTextAnnotation} title="Add Text">
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
@@ -1065,18 +1237,13 @@ export function PlayDesigner({ record, onClose }) {
           </svg>
           <span>Add Text</span>
         </button>
-        <button
-          type="button"
-          className="play-designer-tool"
-          onClick={undoLastDrawing}
-          disabled={!canUndoDrawing}
-          title="Undo Last"
-        >
+        <button type="button" className="play-designer-tool" onClick={addZone} title="Add Zone">
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-            <path fill="currentColor" d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z" />
+            <ellipse cx="12" cy="12" rx="9" ry="6" fill="currentColor" fillOpacity="0.25" stroke="currentColor" strokeWidth="2" strokeDasharray="3 2" />
           </svg>
-          <span>Undo Last</span>
+          <span>Add Zone</span>
         </button>
+
         <div className="toolbar-menu" ref={menuRef}>
           <button
             type="button"
@@ -1093,12 +1260,15 @@ export function PlayDesigner({ record, onClose }) {
           {menuOpen && (
             <div className="toolbar-dropdown" role="menu">
               <button type="button" role="menuitem" onClick={() => flipPlay('horizontal')}>
+                <FlipVertical2 className="menu-item-icon" aria-hidden="true" />
                 Flip Horizontal
               </button>
               <button type="button" role="menuitem" onClick={() => flipPlay('vertical')}>
+                <FlipHorizontal2 className="menu-item-icon" aria-hidden="true" />
                 Flip Vertical
               </button>
               <button type="button" role="menuitem" onClick={restartPlay}>
+                <RotateCcw className="menu-item-icon" aria-hidden="true" />
                 Restart Play
               </button>
               <button
@@ -1107,6 +1277,7 @@ export function PlayDesigner({ record, onClose }) {
                 onClick={restartAdjustment}
                 disabled={!activeSlideId || saving || Boolean(removingSlideId)}
               >
+                <Undo2 className="menu-item-icon" aria-hidden="true" />
                 Restart Adjustment
               </button>
               <button
@@ -1117,6 +1288,7 @@ export function PlayDesigner({ record, onClose }) {
                   setPrintOpen(true)
                 }}
               >
+                <Printer className="menu-item-icon" aria-hidden="true" />
                 Print...
               </button>
             </div>
@@ -1217,6 +1389,55 @@ export function PlayDesigner({ record, onClose }) {
               {toggle.glyph}
             </button>
           ))}
+        </div>
+      </div>
+      ) : zoneAppearanceVisible ? (
+      <div className="player-appearance-panel" aria-label="Zone appearance">
+        <span className="player-label-field">Zone</span>
+        <div className="player-appearance-group" role="group" aria-label="Zone fill">
+          {ZONE_FILLS.map((fill) => {
+            const isActive = (selectedZone.fill || DEFAULT_ZONE_FILL) === fill.id
+            return (
+              <button
+                key={fill.id}
+                type="button"
+                className={`player-color-swatch zone-fill-swatch ${fill.id}${isActive ? ' active' : ''}`}
+                style={{ '--swatch-color': fill.color }}
+                onClick={() => updateZoneAppearance(selectedZone.id, { fill: fill.id })}
+                aria-label={`${fill.label} fill`}
+                aria-pressed={isActive}
+                title={fill.label}
+              />
+            )
+          })}
+        </div>
+        <div className="player-appearance-group" role="group" aria-label="Zone shape">
+          {ZONE_SHAPES.map((shape) => {
+            const isActive = (selectedZone.shape || 'oval') === shape.id
+            return (
+              <button
+                key={shape.id}
+                type="button"
+                className={`text-style-toggle box${isActive ? ' active' : ''}`}
+                onClick={() => updateZoneAppearance(selectedZone.id, { shape: shape.id })}
+                aria-pressed={isActive}
+                title={shape.label}
+              >
+                {shape.label}
+              </button>
+            )
+          })}
+        </div>
+        <div className="player-appearance-group" role="group" aria-label="Zone border">
+          <button
+            type="button"
+            className={`text-style-toggle box${selectedZone.border !== false ? ' active' : ''}`}
+            onClick={() => updateZoneAppearance(selectedZone.id, { border: selectedZone.border === false })}
+            aria-pressed={selectedZone.border !== false}
+            title="Show border"
+          >
+            Border
+          </button>
         </div>
       </div>
       ) : (
@@ -1357,8 +1578,37 @@ export function PlayDesigner({ record, onClose }) {
             segments, and double-click to finish.
           </p>
         )}
+        {zones.map((zone) => {
+          const isSelected = zone.id === selectedZoneId && activeTool === 'select'
+          return (
+            <div
+              key={zone.id}
+              className={`play-designer-zone${isSelected ? ' selected' : ''}`}
+              style={zoneBoxStyle(zone)}
+            >
+              <div
+                className={`play-designer-zone-shape${zone.shape === 'rectangle' ? ' rectangle' : ''}${zone.border === false ? ' no-border' : ''}`}
+                style={{ background: zoneFillColor(zone) }}
+                onPointerDown={(event) => handleZonePointerDown(event, zone)}
+                onClick={(event) => event.stopPropagation()}
+                aria-label="Zone"
+              />
+              {isSelected &&
+                ZONE_HANDLES.map((handle) => (
+                  <span
+                    key={handle.id}
+                    className={`play-designer-zone-handle ${handle.id}`}
+                    style={{ left: `${handle.left}%`, top: `${handle.top}%` }}
+                    onPointerDown={(event) => handleZonePointerDown(event, zone, handle.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label={`Resize zone ${handle.id}`}
+                  />
+                ))}
+            </div>
+          )
+        })}
         {textAnnotations.map((annotation) => (
-          <input
+          <textarea
             key={annotation.id}
             className={`play-designer-text-annotation${annotation.box ? ' boxed' : ''}${annotation.id === selectedTextId ? ' selected' : ''}`}
             style={{
@@ -1368,6 +1618,8 @@ export function PlayDesigner({ record, onClose }) {
               ...textAnnotationStyle(annotation),
             }}
             value={annotation.text}
+            rows={(annotation.text || '').split('\n').length}
+            wrap="off"
             placeholder="Enter text"
             autoFocus={annotation.id === editingTextId}
             onChange={(event) =>

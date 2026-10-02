@@ -16,6 +16,7 @@ import {
   markerStyleVars,
   normalizeDrawings,
   normalizeTextAnnotations,
+  normalizeZones,
   pathData,
   tbarCapPoints,
   textAnnotationStyle,
@@ -24,6 +25,8 @@ import {
   toolDash,
   yardNumberXPositions,
   yardNumbersForWindow,
+  zoneBoxStyle,
+  zoneFillColor,
 } from '../utils/playGeometry'
 
 /** Read-only rendering of a play's field, markers, drawings and text. Used for print output. */
@@ -45,6 +48,7 @@ export function PlayFieldView({ play, className = '' }) {
   const markers = play.markers || []
   const drawings = normalizeDrawings(play.drawings)
   const textAnnotations = normalizeTextAnnotations(play.textAnnotations)
+  const zones = normalizeZones(play.zones)
   const theme = getTheme(play.theme)
   const themeClass = theme.fieldClass ? ` ${theme.fieldClass}` : ''
     const perspective = play.perspective || DEFAULT_PLAY_PERSPECTIVE
@@ -112,6 +116,14 @@ export function PlayFieldView({ play, className = '' }) {
             </span>
           )),
         )}
+      {zones.map((zone) => (
+        <div key={zone.id} className="play-designer-zone" style={zoneBoxStyle(zone)} aria-hidden="true">
+          <div
+            className={`play-designer-zone-shape${zone.shape === 'rectangle' ? ' rectangle' : ''}${zone.border === false ? ' no-border' : ''}`}
+            style={{ background: zoneFillColor(zone) }}
+          />
+        </div>
+      ))}
       {textAnnotations.map((annotation) => (
         <span
           key={annotation.id}
