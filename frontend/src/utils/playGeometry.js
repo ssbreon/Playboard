@@ -1,13 +1,15 @@
 // Shared field geometry used by both the interactive designer and the read-only print renderer.
 
 // Fixed on-screen size (px) for the block tool's perpendicular endcap, independent of field scaling.
-export const TBAR_LENGTH_PX = 12
+export const TBAR_LENGTH_PX = 14
 export const TBAR_THICKNESS_PX = 3
 
 // Fixed on-screen size (px) for route/blitz/coverage arrowheads, independent of field scaling.
-export const ARROW_LENGTH_PX = 9
+export const ARROW_LENGTH_PX = 13
 export const ARROW_WIDTH_PX = 11
 export const BLITZ_FIRST_SEGMENT_DASH = '6 4'
+export const MOTION_ZIGZAG_STEP_PX = 8
+export const MOTION_ZIGZAG_AMPLITUDE_PX = 3
 
 const FIELD_WIDTH_FEET = 160
 const SIDELINE_HASH_MARK_PERCENT = 0
@@ -156,9 +158,11 @@ export const DRAWING_TOOLS = [
   { id: 'route', label: 'Route', color: '#1d4ed8', dash: null, arrow: true },
   { id: 'blitz', label: 'Blitz', color: '#b91c1c', dash: null, arrow: true },
   { id: 'coverage', label: 'Coverage', color: '#7c3aed', dash: '2 4', arrow: true },
+  { id: 'motion', label: 'Motion', color: '#374151', dash: null, arrow: false, endCap: 'motion' },
+  { id: 'line', label: 'Line', color: '#ffffff', dash: null, arrow: false },
 ]
 
-export const EMPTY_DRAWINGS = { block: [], dtb: [], route: [], blitz: [], coverage: [] }
+export const EMPTY_DRAWINGS = { block: [], dtb: [], route: [], blitz: [], coverage: [], motion: [], line: [] }
 
 export function normalizeDrawings(source) {
   return { ...EMPTY_DRAWINGS, ...(source || {}) }
@@ -180,7 +184,7 @@ export const ZONE_SHAPES = [
   { id: 'rectangle', label: 'Rectangle' },
 ]
 
-export const DEFAULT_ZONE_FILL = 'blue'
+export const DEFAULT_ZONE_FILL = 'transparent'
 export const MIN_ZONE_SIZE = 4
 
 export function normalizeZones(source) {
@@ -205,7 +209,13 @@ export function toolColor(tool, theme) {
   return theme.strokeColor || tool.color
 }
 
-export function toolDash(tool, theme) {
+export function toolDash(tool, theme, drawing) {
+  if (tool.id === 'line') {
+    const spacing = Number.isFinite(drawing?.dashSpacing) ? Math.min(20, Math.max(2, drawing.dashSpacing)) : 4
+    if (drawing?.lineStyle === 'dashed') return `6 ${spacing}`
+    if (drawing?.lineStyle === 'dotted') return `0 ${spacing}`
+    return null
+  }
   return theme.toolDash && tool.id in theme.toolDash ? theme.toolDash[tool.id] : tool.dash
 }
 
@@ -213,13 +223,26 @@ export function pathData(points) {
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
 }
 
-export function drawingAnchor(drawing, drawings, markers) {
+export function drawingAnchor(drawing, drawings, markers, ancestors = new Set()) {
+  if (!drawing) return null
+  const identity = `${drawing.type}:${drawing.id}`
+  if (ancestors.has(identity)) return null
+  const nextAncestors = new Set(ancestors)
+  nextAncestors.add(identity)
+
+  if (drawing.motionId) {
+    const motion = drawings.motion.find((item) => item.id === drawing.motionId)
+    const motionAnchor = drawingAnchor(motion, drawings, markers, nextAncestors)
+    const end = motion?.points.at(-1)
+    return motionAnchor && end ? { x: motionAnchor.x + end.dx, y: motionAnchor.y + end.dy } : null
+  }
   if (drawing.blockId) {
     const block = drawings.block.find((item) => item.id === drawing.blockId)
-    const player = block && markers.find((marker) => marker.id === block.anchorId)
+    const blockAnchor = drawingAnchor(block, drawings, markers, nextAncestors)
     const end = block?.points.at(-1)
-    return player && end ? { x: player.x + end.dx, y: player.y + end.dy } : null
+    return blockAnchor && end ? { x: blockAnchor.x + end.dx, y: blockAnchor.y + end.dy } : null
   }
+  if (drawing.type === 'line' || drawing.origin) return drawing.origin || null
   return markers.find((marker) => marker.id === drawing.anchorId)
 }
 
@@ -234,6 +257,70 @@ export function drawingPoints(drawing, drawings, markers) {
 
 export function flattenDrawings(drawings) {
   return Object.entries(drawings).flatMap(([type, list]) => list.map((drawing) => ({ ...drawing, type })))
+}
+
+export function drawingIdsWithDependents(drawings, rootIds) {
+  const removedIds = new Set(rootIds)
+  let changed
+  do {
+    changed = false
+    for (const drawing of flattenDrawings(drawings)) {
+      if (!removedIds.has(drawing.id) && (removedIds.has(drawing.blockId) || removedIds.has(drawing.motionId))) {
+        removedIds.add(drawing.id)
+        changed = true
+      }
+    }
+  } while (changed)
+  return removedIds
+}
+
+export function removeDrawingDependents(drawings, rootIds) {
+  const removedIds = drawingIdsWithDependents(drawings, rootIds)
+  return Object.fromEntries(Object.entries(drawings).map(([type, list]) => [
+    type,
+    list.filter((drawing) => !removedIds.has(drawing.id)),
+  ]))
+}
+
+export function motionPathPoints(points, fieldPxSize) {
+  if (points.length < 2 || fieldPxSize.width <= 0 || fieldPxSize.height <= 0) return points
+  const scaleX = fieldPxSize.width / 100
+  const scaleY = fieldPxSize.height / 100
+  const pixelPoints = points.map((point) => ({ x: point.x * scaleX, y: point.y * scaleY }))
+  const zigzagPoints = [pixelPoints[0]]
+
+  for (let segment = 1; segment < pixelPoints.length; segment += 1) {
+    const start = pixelPoints[segment - 1]
+    const end = pixelPoints[segment]
+    const dx = end.x - start.x
+    const dy = end.y - start.y
+    const length = Math.hypot(dx, dy)
+    if (length === 0) continue
+    const count = Math.max(2, Math.ceil(length / MOTION_ZIGZAG_STEP_PX))
+    const normalX = -dy / length
+    const normalY = dx / length
+
+    for (let step = 1; step <= count; step += 1) {
+      const progress = step / count
+      const offset = step === count ? 0 : step % 2 === 1 ? MOTION_ZIGZAG_AMPLITUDE_PX : -MOTION_ZIGZAG_AMPLITUDE_PX
+      zigzagPoints.push({
+        x: start.x + dx * progress + normalX * offset,
+        y: start.y + dy * progress + normalY * offset,
+      })
+    }
+  }
+
+  return zigzagPoints.map((point) => ({ x: point.x / scaleX, y: point.y / scaleY }))
+}
+
+export function fixedSizeEllipse(point, fieldPxSize, radiusPx) {
+  if (!point || fieldPxSize.width <= 0 || fieldPxSize.height <= 0) return null
+  return {
+    cx: point.x,
+    cy: point.y,
+    rx: radiusPx / (fieldPxSize.width / 100),
+    ry: radiusPx / (fieldPxSize.height / 100),
+  }
 }
 
 // Computes a perpendicular cap segment (in field percent coordinates) that renders as a

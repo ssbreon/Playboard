@@ -11,14 +11,16 @@ import {
   DEFAULT_FIELD_ZONE,
   DRAWING_TOOLS,
   FIELD_ZONES,
-    PLAY_PERSPECTIVES,
+  PLAY_PERSPECTIVES,
   TBAR_THICKNESS_PX,
   arrowCapPoints,
   drawingAnchor as resolveDrawingAnchor,
+  drawingIdsWithDependents,
   decorationPreviewVars,
   endZoneBandsForWindow,
   goalLinePositionsForWindow,
   fieldWindowForZone,
+  fixedSizeEllipse,
   flattenDrawings,
   hashMarkXPositions,
   hashMarkYPositionsForWindow,
@@ -26,7 +28,9 @@ import {
   normalizeDrawings,
   normalizeTextAnnotations,
   normalizeZones,
+  motionPathPoints,
   pathData,
+  removeDrawingDependents,
   tbarCapPoints,
   textAnnotationStyle,
   textAnnotationWidth,
@@ -49,6 +53,7 @@ const TOOL_ICONS = {
   route: <g stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"><path d="M5 19 19 5" /><path d="M13 5h6v6" /></g>,
   blitz: <g stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"><path strokeDasharray="4 3" d="M5 19 19 5" /><path d="M13 5h6v6" /></g>,
   coverage: <g stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"><path strokeDasharray="1 3" d="M5 19 19 5" /><path d="M13 5h6v6" /></g>,
+  motion: <path stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" d="M3 12 7 8l4 8 4-8 6 4" />,
 }
 
 const PLAYER_COLORS = ['#ffffff', '#1d4ed8', '#b91c1c', '#15803d', '#f59e0b', '#7c3aed', '#374151']
@@ -66,6 +71,10 @@ const PLAYER_DECORATIONS = [
   { id: 'vertical-line', label: 'Vertical line' },
 ]
 const MAX_ADJUSTMENT_SLIDES = 3
+const MOTION_CAP_RADIUS_PX = 3.5
+const PATH_ANCHOR_TOOLS = new Set(DRAWING_TOOLS.map((tool) => tool.id).filter((id) => !['select', 'dtb', 'line'].includes(id)))
+const BLOCK_ANCHOR_TOOLS = new Set(['dtb', 'route', 'blitz', 'coverage'])
+const MOTION_CAP_ANCHOR_TOOLS = new Set(DRAWING_TOOLS.map((tool) => tool.id).filter((id) => !['select', 'motion'].includes(id)))
 const ZONE_HANDLES = [
   { id: 'nw', left: 0, top: 0 },
   { id: 'n', left: 50, top: 0 },
@@ -117,6 +126,7 @@ export function PlayDesigner({ record, onClose }) {
   const [theme, setTheme] = useState(initialTheme)
   const [selectedId, setSelectedId] = useState(null)
   const [selectedDrawing, setSelectedDrawing] = useState(null)
+  const [pathDrag, setPathDrag] = useState(null)
   const [selectedTextId, setSelectedTextId] = useState(null)
   const [selectedZoneId, setSelectedZoneId] = useState(null)
   const [zoneDrag, setZoneDrag] = useState(null)
@@ -133,7 +143,7 @@ export function PlayDesigner({ record, onClose }) {
   const [cursorPos, setCursorPos] = useState(null)
   const [drawHistory, setDrawHistory] = useState([])
   const [redoHistory, setRedoHistory] = useState([])
-    const [editingTextId, setEditingTextId] = useState(null)
+  const [editingTextId, setEditingTextId] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
@@ -147,7 +157,7 @@ export function PlayDesigner({ record, onClose }) {
   const [savedName, setSavedName] = useState(record.name)
   const [savedMarkers, setSavedMarkers] = useState(record.initialMarkers || [])
   const [savedDrawings, setSavedDrawings] = useState(normalizeDrawings(record.initialDrawings))
-    const [savedTextAnnotations, setSavedTextAnnotations] = useState(normalizeTextAnnotations(record.initialTextAnnotations))
+  const [savedTextAnnotations, setSavedTextAnnotations] = useState(normalizeTextAnnotations(record.initialTextAnnotations))
   const [savedZones, setSavedZones] = useState(normalizeZones(record.initialZones))
   const [savedTemplateId, setSavedTemplateId] = useState(initialTemplateId)
   const [savedCategory, setSavedCategory] = useState(initialCategory)
@@ -172,6 +182,7 @@ export function PlayDesigner({ record, onClose }) {
   const [fieldPxSize, setFieldPxSize] = useState({ width: 100, height: 100 })
   const activeTheme = getTheme(theme)
   const themeClass = activeTheme.fieldClass ? ` ${activeTheme.fieldClass}` : ''
+  const fieldDecorationClass = fieldDecoration === FIELD_DECORATIONS[0] ? ' no-field-decoration' : ''
   const hashXPositions = hashMarkXPositions(fieldOrientation)
   const showHashMarks = fieldDecoration !== FIELD_DECORATIONS[0]
   const showYardNumbers = fieldDecoration === FIELD_DECORATIONS[2]
@@ -506,17 +517,13 @@ export function PlayDesigner({ record, onClose }) {
       const last = history.pop()
       const drawing = (drawings[last.type] || []).find((item) => item.id === last.id)
       if (drawing) {
-        const removedDrawings = [{ type: last.type, drawing }]
-        if (last.type === 'block') {
-          removedDrawings.push(...drawings.dtb
-            .filter((item) => item.blockId === last.id)
-            .map((item) => ({ type: 'dtb', drawing: item })))
-        }
-        setDrawings((current) => ({
-          ...current,
-          [last.type]: current[last.type].filter((drawing) => drawing.id !== last.id),
-          ...(last.type === 'block' && { dtb: current.dtb.filter((drawing) => drawing.blockId !== last.id) }),
-        }))
+        const removedIds = drawingIdsWithDependents(drawings, [last.id])
+        const removedDrawings = Object.entries(drawings).flatMap(([type, items]) =>
+          items.filter((item) => removedIds.has(item.id)).map((item) => ({ type, drawing: item })),
+        )
+        setDrawings((current) => {
+          return removeDrawingDependents(current, [last.id])
+        })
         setRedoHistory((current) => [...current, { entry: last, drawings: removedDrawings }])
         setSelectedDrawing(null)
         break
@@ -590,6 +597,11 @@ export function PlayDesigner({ record, onClose }) {
       for (const [type, list] of Object.entries(current)) {
         next[type] = list.map((drawing) => ({
           ...drawing,
+          ...(drawing.origin && {
+            origin: axis === 'horizontal'
+              ? { x: 100 - drawing.origin.x, y: drawing.origin.y }
+              : { x: drawing.origin.x, y: 100 - drawing.origin.y },
+          }),
           points: drawing.points.map((point) =>
             axis === 'horizontal' ? { ...point, dx: -point.dx } : { ...point, dy: -point.dy },
           ),
@@ -650,18 +662,34 @@ export function PlayDesigner({ record, onClose }) {
     }
   }
 
-  function addTextAnnotation() {
+  function startPlacementTool(tool) {
+    setActiveTool(tool)
+    setActiveChain(null)
+    setCursorPos(null)
+    setSelectedDrawing(null)
+    setSelectedId(null)
+    setMultiSelectedIds([])
+    setSelectedTextId(null)
+    setEditingTextId(null)
+    setSelectedZoneId(null)
+  }
+
+  function addTextAnnotation(position) {
     const id = crypto.randomUUID()
-    setTextAnnotations((current) => [...current, { id, text: '', x: 50, y: 5 }])
+    setTextAnnotations((current) => [...current, { id, text: '', x: position.x, y: position.y }])
     setEditingTextId(id)
     setSelectedTextId(id)
     setSelectedZoneId(null)
     setActiveTool('select')
   }
 
-  function addZone() {
+  function addZone(position) {
     const id = crypto.randomUUID()
-    setZones((current) => [...current, { id, x: 50, y: 30, width: 20, height: 14, shape: 'oval', fill: DEFAULT_ZONE_FILL, border: true }])
+    const width = 20
+    const height = 14
+    const x = Math.min(100 - width / 2, Math.max(width / 2, position.x))
+    const y = Math.min(100 - height / 2, Math.max(height / 2, position.y))
+    setZones((current) => [...current, { id, x, y, width, height, shape: 'oval', fill: DEFAULT_ZONE_FILL, border: true }])
     setSelectedZoneId(id)
     setSelectedId(null)
     setMultiSelectedIds([])
@@ -733,7 +761,8 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleMarkerPointerDown(event, id) {
-    if (activeTool !== 'select') return
+    if (activeTool !== 'select' || event.button !== 0) return
+    event.preventDefault()
     event.stopPropagation()
     if (event.shiftKey) {
       setMultiSelectedIds((current) => {
@@ -773,7 +802,7 @@ export function PlayDesigner({ record, onClose }) {
 
   function handleMarkerClick(event, id) {
     event.stopPropagation()
-    if (activeTool === 'select' || activeTool === 'dtb' || activeChain) return
+    if (!PATH_ANCHOR_TOOLS.has(activeTool) || activeChain) return
     setActiveChain({ type: activeTool, anchorId: id, points: [] })
     setSelectedDrawing(null)
     setCursorPos(null)
@@ -806,19 +835,63 @@ export function PlayDesigner({ record, onClose }) {
   function handleDrawingClick(event, type, id) {
     if (activeTool !== 'select') return
     event.stopPropagation()
+    fieldRef.current?.focus({ preventScroll: true })
     setSelectedDrawing({ type, id })
     setSelectedId(null)
+    setMultiSelectedIds([])
     setSelectedTextId(null)
     setSelectedZoneId(null)
   }
 
+  function handleDrawingPointerDown(event, type, drawing, indices = null) {
+    if (activeTool !== 'select' || event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = fieldRef.current?.getBoundingClientRect()
+    const anchor = drawingAnchor(drawing)
+    if (!rect || !anchor) return
+    const isFreeLine = type === 'line' && !drawing.motionId && !drawing.blockId && !drawing.anchorId
+    const movableIndices = isFreeLine ? indices : indices?.filter((index) => index !== 0)
+    if (movableIndices?.length === 0) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    fieldRef.current.focus({ preventScroll: true })
+    setSelectedDrawing({ type, id: drawing.id })
+    setSelectedId(null)
+    setMultiSelectedIds([])
+    setSelectedTextId(null)
+    setSelectedZoneId(null)
+    setPathDrag({
+      type,
+      id: drawing.id,
+      indices: movableIndices,
+      isFreeLine,
+      start: { x: (event.clientX - rect.left) / rect.width * 100, y: (event.clientY - rect.top) / rect.height * 100 },
+      points: [anchor, ...drawing.points.map((point) => ({ x: anchor.x + point.dx, y: anchor.y + point.dy }))],
+    })
+  }
+
   function handleBlockCapClick(event, drawing) {
-    if (activeTool !== 'dtb' || activeChain) {
+    if (!BLOCK_ANCHOR_TOOLS.has(activeTool) || activeChain) {
       handleDrawingClick(event, 'block', drawing.id)
       return
     }
     event.stopPropagation()
-    setActiveChain({ type: 'dtb', blockId: drawing.id, points: [] })
+    setActiveChain({ type: activeTool, blockId: drawing.id, points: [] })
+    setSelectedDrawing(null)
+    setCursorPos(null)
+  }
+
+  function handleMotionCapClick(event, drawing) {
+    if (activeChain) {
+      event.stopPropagation()
+      return
+    }
+    if (!MOTION_CAP_ANCHOR_TOOLS.has(activeTool)) {
+      handleDrawingClick(event, 'motion', drawing.id)
+      return
+    }
+    event.stopPropagation()
+    setActiveChain({ type: activeTool, motionId: drawing.id, points: [] })
     setSelectedDrawing(null)
     setCursorPos(null)
   }
@@ -837,7 +910,26 @@ export function PlayDesigner({ record, onClose }) {
       setSelectedZoneId(null)
       return
     }
-    if (!activeChain) return
+    if (!activeChain) {
+      if (activeTool === 'text') {
+        addTextAnnotation(positionFromEvent(event))
+        return
+      }
+      if (activeTool === 'zone') {
+        addZone(positionFromEvent(event))
+        return
+      }
+      if (activeTool === 'line') {
+        setActiveChain({ type: 'line', origin: positionFromEvent(event), points: [] })
+        setSelectedDrawing(null)
+        setSelectedId(null)
+        setMultiSelectedIds([])
+        setSelectedTextId(null)
+        setSelectedZoneId(null)
+        setCursorPos(null)
+      }
+      return
+    }
     const anchor = drawingAnchor(activeChain)
     if (!anchor) {
       setActiveChain(null)
@@ -853,12 +945,21 @@ export function PlayDesigner({ record, onClose }) {
     if (activeTool === 'select' || !activeChain) return
     const points = activeChain.points.length > 0 ? activeChain.points.slice(0, -1) : activeChain.points
     if (points.length > 0) {
-      const newDrawing = activeChain.type === 'dtb'
-        ? { id: crypto.randomUUID(), blockId: activeChain.blockId, points }
-        : { id: crypto.randomUUID(), anchorId: activeChain.anchorId, points }
+      const newDrawing = activeChain.motionId
+        ? { id: crypto.randomUUID(), motionId: activeChain.motionId, points }
+        : activeChain.blockId
+          ? { id: crypto.randomUUID(), blockId: activeChain.blockId, points }
+          : activeChain.type === 'line'
+            ? { id: crypto.randomUUID(), origin: activeChain.origin, points }
+            : { id: crypto.randomUUID(), anchorId: activeChain.anchorId, points }
       setDrawings((current) => ({ ...current, [activeChain.type]: [...current[activeChain.type], newDrawing] }))
       setDrawHistory((current) => [...current, { type: activeChain.type, id: newDrawing.id }])
       setRedoHistory([])
+      if (activeChain.type === 'line') {
+        setActiveTool('select')
+        setSelectedDrawing({ type: 'line', id: newDrawing.id })
+        fieldRef.current?.focus({ preventScroll: true })
+      }
     }
     setActiveChain(null)
     setCursorPos(null)
@@ -871,6 +972,23 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   function handleFieldPointerMove(event) {
+    if (pathDrag) {
+      const point = positionFromEvent(event)
+      const affected = pathDrag.points.filter((_, index) => !pathDrag.indices || pathDrag.indices.includes(index))
+      const dx = Math.min(100 - Math.max(...affected.map((item) => item.x)), Math.max(-Math.min(...affected.map((item) => item.x)), point.x - pathDrag.start.x))
+      const dy = Math.min(100 - Math.max(...affected.map((item) => item.y)), Math.max(-Math.min(...affected.map((item) => item.y)), point.y - pathDrag.start.y))
+      const points = pathDrag.points.map((item, index) => !pathDrag.indices || pathDrag.indices.includes(index)
+        ? { x: item.x + dx, y: item.y + dy }
+        : item)
+      const origin = points[0]
+      setDrawings((current) => ({
+        ...current,
+        [pathDrag.type]: current[pathDrag.type].map((drawing) => drawing.id === pathDrag.id
+          ? { ...drawing, ...(pathDrag.isFreeLine && { origin }), points: points.slice(1).map((item) => ({ dx: item.x - origin.x, dy: item.y - origin.y })) }
+          : drawing),
+      }))
+      return
+    }
     if (marquee) {
       if (!marquee.active) event.currentTarget.setPointerCapture(event.pointerId)
       const end = positionFromEvent(event)
@@ -970,6 +1088,7 @@ export function PlayDesigner({ record, onClose }) {
     setDragTextId(null)
     setDragTextOffset(null)
     setZoneDrag(null)
+    setPathDrag(null)
   }
 
   function handleKeyDown(event) {
@@ -986,22 +1105,16 @@ export function PlayDesigner({ record, onClose }) {
     if (selectedId) {
       setMarkers((current) => current.filter((marker) => marker.id !== selectedId))
       setDrawings((current) => {
-        const next = {}
-        const removedBlocks = current.block.filter((drawing) => drawing.anchorId === selectedId).map((drawing) => drawing.id)
-        for (const type of Object.keys(current)) {
-          next[type] = current[type].filter((drawing) => drawing.anchorId !== selectedId && !removedBlocks.includes(drawing.blockId))
-        }
-        return next
+        const anchoredIds = flattenDrawings(current)
+          .filter((drawing) => drawing.anchorId === selectedId)
+          .map((drawing) => drawing.id)
+        return removeDrawingDependents(current, anchoredIds)
       })
       setSelectedId(null)
     } else if (selectedDrawing) {
-      setDrawings((current) => ({
-        ...current,
-        [selectedDrawing.type]: current[selectedDrawing.type].filter((drawing) => drawing.id !== selectedDrawing.id),
-        ...(selectedDrawing.type === 'block' && {
-          dtb: current.dtb.filter((drawing) => drawing.blockId !== selectedDrawing.id),
-        }),
-      }))
+      setDrawings((current) => {
+        return removeDrawingDependents(current, [selectedDrawing.id])
+      })
       setSelectedDrawing(null)
     } else if (selectedTextId) {
       setTextAnnotations((current) => current.filter((annotation) => annotation.id !== selectedTextId))
@@ -1024,8 +1137,8 @@ export function PlayDesigner({ record, onClose }) {
     return resolveToolColor(tool, activeTheme)
   }
 
-  function toolDash(tool) {
-    return resolveToolDash(tool, activeTheme)
+  function toolDash(tool, drawing) {
+    return resolveToolDash(tool, activeTheme, drawing)
   }
 
   const allDrawings = flattenDrawings(drawings)
@@ -1203,7 +1316,7 @@ export function PlayDesigner({ record, onClose }) {
       <div className="play-designer-toolbar" role="toolbar" aria-label="Drawing tools">
         {toolButton(DRAWING_TOOLS[0])}
         <div className="play-designer-drawing-tools" role="group" aria-label="Path tools">
-          {DRAWING_TOOLS.slice(1).map(toolButton)}
+          {DRAWING_TOOLS.slice(1).filter((tool) => tool.id !== 'line').map(toolButton)}
           <div className="play-designer-history-tools" role="group" aria-label="Drawing history">
             <button
               type="button"
@@ -1231,17 +1344,43 @@ export function PlayDesigner({ record, onClose }) {
             </button>
           </div>
         </div>
-        <button type="button" className="play-designer-tool" onClick={addTextAnnotation} title="Add Text">
+        <button
+          type="button"
+          className={`play-designer-tool text-tool${activeTool === 'text' ? ' active' : ''}`}
+          onClick={() => startPlacementTool('text')}
+          aria-pressed={activeTool === 'text'}
+          title="Add Text"
+        >
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
             <path fill="currentColor" d="M5 4h14v2h-6v14h-2V6H5z" />
           </svg>
           <span>Add Text</span>
         </button>
-        <button type="button" className="play-designer-tool" onClick={addZone} title="Add Zone">
+        <button
+          type="button"
+          className={`play-designer-tool zone-tool${activeTool === 'zone' ? ' active' : ''}`}
+          onClick={() => startPlacementTool('zone')}
+          aria-pressed={activeTool === 'zone'}
+          title="Add Zone"
+        >
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
             <ellipse cx="12" cy="12" rx="9" ry="6" fill="currentColor" fillOpacity="0.25" stroke="currentColor" strokeWidth="2" strokeDasharray="3 2" />
           </svg>
           <span>Add Zone</span>
+        </button>
+        <button
+          type="button"
+          className={`play-designer-tool line-tool${activeTool === 'line' ? ' active' : ''}`}
+          onClick={() => startPlacementTool('line')}
+          aria-pressed={activeTool === 'line'}
+          title="Add Line"
+        >
+          <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
+            <path d="M5 18 12 7 19 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="5" cy="18" r="2.5" fill="currentColor" />
+            <circle cx="19" cy="7" r="2.5" fill="currentColor" />
+          </svg>
+          <span>Add Line</span>
         </button>
 
         <div className="toolbar-menu" ref={menuRef}>
@@ -1296,7 +1435,7 @@ export function PlayDesigner({ record, onClose }) {
         </div>
       </div>
       {pathAppearanceVisible ? (
-      <div className="player-appearance-panel" aria-label={`Appearance for ${selectedPathTool.label} path`}>
+      <div className={`player-appearance-panel${selectedDrawing.type === 'line' ? ' line-appearance-panel' : ''}`} aria-label={`Appearance for ${selectedPathTool.label} path`}>
         <span className="player-label-field">{selectedPathTool.label}</span>
         <div className="player-appearance-group" role="group" aria-label="Path color">
           <button
@@ -1327,6 +1466,37 @@ export function PlayDesigner({ record, onClose }) {
             />
           </label>
         </div>
+        {selectedDrawing.type === 'line' && (
+          <div className="player-appearance-group" role="group" aria-label="Line style">
+            {['solid', 'dashed', 'dotted'].map((lineStyle) => (
+              <button
+                key={lineStyle}
+                type="button"
+                className={`player-color-reset${(selectedPath.lineStyle || 'solid') === lineStyle ? ' active' : ''}`}
+                onClick={() => updateDrawingAppearance('line', selectedPath.id, { lineStyle })}
+                aria-pressed={(selectedPath.lineStyle || 'solid') === lineStyle}
+                title={`${lineStyle[0].toUpperCase()}${lineStyle.slice(1)} line`}
+              >
+                {lineStyle[0].toUpperCase()}{lineStyle.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
+        {selectedDrawing.type === 'line' && ['dashed', 'dotted'].includes(selectedPath.lineStyle) && (
+          <label className="player-label-field line-spacing-field">
+            <span>Spacing</span>
+            <input
+              type="range"
+              min="2"
+              max="20"
+              step="1"
+              value={selectedPath.dashSpacing ?? 4}
+              onChange={(event) => updateDrawingAppearance('line', selectedPath.id, { dashSpacing: Number(event.target.value) })}
+              aria-label="Line dash spacing"
+            />
+            <output>{selectedPath.dashSpacing ?? 4}</output>
+          </label>
+        )}
       </div>
       ) : textAppearanceVisible ? (
       <div className="player-appearance-panel" aria-label="Text appearance">
@@ -1512,13 +1682,14 @@ export function PlayDesigner({ record, onClose }) {
       <div
         ref={fieldRef}
         id="play-designer-field"
-        className={`play-designer-field${activeTool !== 'select' ? ' drawing' : ''}${themeClass} zone-windowed`}
+        className={`play-designer-field${activeTool !== 'select' ? ' drawing' : ''}${themeClass}${fieldDecorationClass} zone-windowed`}
         onClick={handleFieldClick}
         onDoubleClick={handleFieldDoubleClick}
         onPointerDown={handleFieldPointerDown}
         onPointerMove={handleFieldPointerMove}
         onPointerUp={handleFieldPointerUp}
-        onPointerLeave={handleFieldPointerUp}
+        onPointerLeave={() => { if (!pathDrag) handleFieldPointerUp() }}
+        onPointerCancel={handleFieldPointerUp}
         onKeyDown={handleKeyDown}
         tabIndex={0}
         role="application"
@@ -1607,39 +1778,60 @@ export function PlayDesigner({ record, onClose }) {
             </div>
           )
         })}
-        {textAnnotations.map((annotation) => (
-          <textarea
-            key={annotation.id}
-            className={`play-designer-text-annotation${annotation.box ? ' boxed' : ''}${annotation.id === selectedTextId ? ' selected' : ''}`}
-            style={{
-              left: `${annotation.x}%`,
-              top: `${annotation.y}%`,
-              width: `${textAnnotationWidth(annotation, fieldRef.current)}px`,
-              ...textAnnotationStyle(annotation),
-            }}
-            value={annotation.text}
-            rows={(annotation.text || '').split('\n').length}
-            wrap="off"
-            placeholder="Enter text"
-            autoFocus={annotation.id === editingTextId}
-            onChange={(event) =>
-              setTextAnnotations((current) =>
-                current.map((item) => (item.id === annotation.id ? { ...item, text: event.target.value } : item)),
-              )
-            }
-            onPointerDown={(event) => handleTextPointerDown(event, annotation.id)}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-            onBlur={() => {
-              if (!annotation.text.trim()) {
-                setTextAnnotations((current) => current.filter((item) => item.id !== annotation.id))
-                setSelectedTextId(null)
-                setEditingTextId(null)
-              }
-            }}
-            aria-label="Text annotation"
-          />
-        ))}
+        {textAnnotations.map((annotation) => {
+          const isSelected = annotation.id === selectedTextId
+          const annotationWidth = textAnnotationWidth(annotation, fieldRef.current)
+          return (
+            <div
+              key={annotation.id}
+              className={`play-designer-text-annotation-wrap${isSelected ? ' selected' : ''}`}
+              style={{ left: `${annotation.x}%`, top: `${annotation.y}%` }}
+            >
+              <textarea
+                className={`play-designer-text-annotation${annotation.box ? ' boxed' : ''}${isSelected ? ' selected' : ''}`}
+                style={{ width: `${annotationWidth}px`, ...textAnnotationStyle(annotation) }}
+                value={annotation.text}
+                rows={(annotation.text || '').split('\n').length}
+                wrap="off"
+                placeholder="Enter text"
+                autoFocus={annotation.id === editingTextId}
+                onChange={(event) =>
+                  setTextAnnotations((current) =>
+                    current.map((item) => (item.id === annotation.id ? { ...item, text: event.target.value } : item)),
+                  )
+                }
+                onPointerDown={(event) => handleTextPointerDown(event, annotation.id)}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                onBlur={() => {
+                  if (!annotation.text.trim()) {
+                    setTextAnnotations((current) => current.filter((item) => item.id !== annotation.id))
+                    setSelectedTextId(null)
+                    setEditingTextId(null)
+                  }
+                }}
+                aria-label="Text annotation"
+              />
+              {isSelected && (
+                <button
+                  type="button"
+                  className="play-designer-text-delete"
+                  aria-label="Delete text annotation"
+                  title="Delete text annotation"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setTextAnnotations((current) => current.filter((item) => item.id !== annotation.id))
+                    setSelectedTextId(null)
+                    setEditingTextId(null)
+                  }}
+                >
+                  <X size={13} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          )
+        })}
         <svg className="play-designer-routes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
           {allDrawings.map((drawing) => {
             const anchor = drawingAnchor(drawing)
@@ -1649,25 +1841,37 @@ export function PlayDesigner({ record, onClose }) {
               { x: anchor.x, y: anchor.y },
               ...drawing.points.map((p) => ({ x: anchor.x + p.dx, y: anchor.y + p.dy })),
             ]
+            const renderedPoints = tool.id === 'motion' ? motionPathPoints(points, fieldPxSize) : points
             const isSelected = selectedDrawing?.type === drawing.type && selectedDrawing?.id === drawing.id
             const color = drawing.color || toolColor(tool)
             const cap = tool.endCap === 'tbar' ? tbarCap(points) : null
             const arrow = tool.arrow ? arrowCap(points) : null
+            const motionCap = tool.id === 'motion' && points.length > 1
+              ? fixedSizeEllipse(points.at(-1), fieldPxSize, MOTION_CAP_RADIUS_PX)
+              : null
             return (
               <g key={drawing.id} className={isSelected ? 'play-designer-drawing selected' : 'play-designer-drawing'}>
                 {isSelected && (
                   <g className="play-designer-selection-halo">
-                    <path d={pathData(points)} />
+                    <path d={pathData(renderedPoints)} />
                     {cap && <line x1={cap.x1} y1={cap.y1} x2={cap.x2} y2={cap.y2} />}
                     {arrow && <polygon points={arrow} />}
+                    {motionCap && <ellipse {...motionCap} />}
                   </g>
                 )}
                 <path
                   className={`play-designer-route${isSelected ? ' selected' : ''}`}
-                  d={pathData(tool.id === 'blitz' ? points.slice(0, 2) : points)}
+                  d={pathData(tool.id === 'blitz' ? renderedPoints.slice(0, 2) : renderedPoints)}
                   stroke={color}
-                  strokeDasharray={tool.id === 'blitz' ? BLITZ_FIRST_SEGMENT_DASH : toolDash(tool) || undefined}
-                  strokeLinecap={tool.id === 'dtb' ? 'round' : undefined}
+                  strokeDasharray={tool.id === 'blitz' ? BLITZ_FIRST_SEGMENT_DASH : toolDash(tool, drawing) || undefined}
+                  strokeLinecap={tool.id === 'dtb' || (tool.id === 'line' && drawing.lineStyle === 'dotted') ? 'round' : undefined}
+                  strokeLinejoin={tool.id === 'line' ? 'round' : undefined}
+                  onClick={(event) => handleDrawingClick(event, drawing.type, drawing.id)}
+                />
+                <path
+                  className="play-designer-path-hit"
+                  d={pathData(points)}
+                  onPointerDown={(event) => handleDrawingPointerDown(event, drawing.type, drawing)}
                   onClick={(event) => handleDrawingClick(event, drawing.type, drawing.id)}
                 />
                 {tool.id === 'blitz' && points.length > 2 && (
@@ -1681,7 +1885,7 @@ export function PlayDesigner({ record, onClose }) {
                 {cap && (
                   <>
                     <line
-                      className={`play-designer-block-cap${drawing.type === 'block' && hoveredBlockCapId === drawing.id && activeTool === 'dtb' && !activeChain ? ' anchor-hover' : ''}`}
+                      className={`play-designer-block-cap${drawing.type === 'block' && hoveredBlockCapId === drawing.id && BLOCK_ANCHOR_TOOLS.has(activeTool) && !activeChain ? ' anchor-hover' : ''}`}
                       x1={cap.x1}
                       y1={cap.y1}
                       x2={cap.x2}
@@ -1702,7 +1906,7 @@ export function PlayDesigner({ record, onClose }) {
                         vectorEffect="non-scaling-stroke"
                         pointerEvents="stroke"
                         onPointerEnter={() => {
-                          if (activeTool === 'dtb' && !activeChain) setHoveredBlockCapId(drawing.id)
+                          if (BLOCK_ANCHOR_TOOLS.has(activeTool) && !activeChain) setHoveredBlockCapId(drawing.id)
                         }}
                         onPointerLeave={() => setHoveredBlockCapId(null)}
                         onClick={(event) => handleBlockCapClick(event, drawing)}
@@ -1717,6 +1921,7 @@ export function PlayDesigner({ record, onClose }) {
                     onClick={(event) => handleDrawingClick(event, drawing.type, drawing.id)}
                   />
                 )}
+                {motionCap && <ellipse {...motionCap} fill={color} stroke="#fff" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
               </g>
             )
           })}
@@ -1727,15 +1932,20 @@ export function PlayDesigner({ record, onClose }) {
               ...activeChain.points.map((p) => ({ x: chainAnchor.x + p.dx, y: chainAnchor.y + p.dy })),
             ]
             if (cursorPos) points.push(cursorPos)
+            const renderedPoints = tool.id === 'motion' ? motionPathPoints(points, fieldPxSize) : points
             const cap = tool.endCap === 'tbar' ? tbarCap(points) : null
             const arrow = tool.arrow ? arrowCap(points) : null
+            const motionCap = tool.id === 'motion' && points.length > 1
+              ? fixedSizeEllipse(points.at(-1), fieldPxSize, MOTION_CAP_RADIUS_PX)
+              : null
             return (
               <g>
                 <path
-                  d={pathData(tool.id === 'blitz' ? points.slice(0, 2) : points)}
+                  d={pathData(tool.id === 'blitz' ? renderedPoints.slice(0, 2) : renderedPoints)}
                   stroke={toolColor(tool)}
                   strokeDasharray={tool.id === 'blitz' ? BLITZ_FIRST_SEGMENT_DASH : toolDash(tool) || undefined}
                   strokeLinecap={tool.id === 'dtb' ? 'round' : undefined}
+                  strokeLinejoin={tool.id === 'line' ? 'round' : undefined}
                   className="play-designer-route preview"
                 />
                 {tool.id === 'blitz' && points.length > 2 && (
@@ -1758,10 +1968,65 @@ export function PlayDesigner({ record, onClose }) {
                   />
                 )}
                 {arrow && <polygon points={arrow} fill={toolColor(tool)} />}
+                {motionCap && <ellipse {...motionCap} fill={toolColor(tool)} stroke="#fff" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
               </g>
             )
           })()}
         </svg>
+        {!activeChain && MOTION_CAP_ANCHOR_TOOLS.has(activeTool) && (
+          <div className="play-designer-motion-cap-controls">
+            {drawings.motion.map((drawing) => {
+              const anchor = drawingAnchor(drawing)
+              const end = drawing.points.at(-1)
+              if (!anchor || !end) return null
+              const endpoint = { x: anchor.x + end.dx, y: anchor.y + end.dy }
+              return (
+                <button
+                  key={drawing.id}
+                  type="button"
+                  className="play-designer-motion-cap-hit"
+                  style={{ left: `${endpoint.x}%`, top: `${endpoint.y}%` }}
+                  aria-label="Start path from Motion endpoint"
+                  title="Start path from Motion endpoint"
+                  onClick={(event) => handleMotionCapClick(event, drawing)}
+                />
+              )
+            })}
+          </div>
+        )}
+        {pathAppearanceVisible && (() => {
+          const anchor = drawingAnchor(selectedPath)
+          if (!anchor) return null
+          const points = [anchor, ...selectedPath.points.map((point) => ({
+            x: anchor.x + point.dx,
+            y: anchor.y + point.dy,
+          }))]
+          const label = selectedPathTool.label.toLowerCase()
+          return (
+            <div className="play-designer-line-controls">
+              {points.slice(1).map((point, index) => (
+                <span
+                  key={`segment-${index}`}
+                  className="play-designer-line-handle segment"
+                  style={{ left: `${(points[index].x + point.x) / 2}%`, top: `${(points[index].y + point.y) / 2}%` }}
+                  aria-label={`Move ${label} segment ${index + 1}`}
+                  onPointerDown={(event) => handleDrawingPointerDown(event, selectedDrawing.type, selectedPath, [index, index + 1])}
+                  onClick={(event) => handleDrawingClick(event, selectedDrawing.type, selectedPath.id)}
+                />
+              ))}
+              {points.map((point, index) => (index === 0 && selectedDrawing.type !== 'line' ? null : (
+                <span
+                  key={`vertex-${index}`}
+                  className="play-designer-line-handle"
+                  style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                  aria-label={`Reshape ${label} point ${index + 1}`}
+                  onPointerDown={(event) => handleDrawingPointerDown(event, selectedDrawing.type, selectedPath, [index])}
+                  onClick={(event) => handleDrawingClick(event, selectedDrawing.type, selectedPath.id)}
+                />
+              )))}
+            </div>
+          )
+        })()}
         {markers.map((marker) => {
           const animation = playerAnimation?.players[marker.id]
           const progress = playerAnimation?.progress || 0
@@ -1777,8 +2042,10 @@ export function PlayDesigner({ record, onClose }) {
             <button
               key={marker.id}
               type="button"
-              className={`play-designer-marker ${marker.team || 'offense'} ${marker.decoration || 'solid'}${marker.color ? ' color-override' : ''}${marker.id === selectedId || multiSelectedIds.includes(marker.id) ? ' selected' : ''}${activeTool !== 'select' && activeTool !== 'dtb' ? ' anchorable' : ''}${themeClass}`}
+              className={`play-designer-marker ${marker.team || 'offense'} ${marker.decoration || 'solid'}${marker.color ? ' color-override' : ''}${marker.id === selectedId || multiSelectedIds.includes(marker.id) ? ' selected' : ''}${PATH_ANCHOR_TOOLS.has(activeTool) ? ' anchorable' : ''}${themeClass}`}
               style={markerStyleVars(displayMarker)}
+              draggable={false}
+              onDragStart={(event) => event.preventDefault()}
               onPointerDown={(event) => handleMarkerPointerDown(event, marker.id)}
               onClick={(event) => handleMarkerClick(event, marker.id)}
               aria-label="Player marker"

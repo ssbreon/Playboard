@@ -17,16 +17,16 @@ services:
     restart: unless-stopped
 
   cosmosdb:
-    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-latest
+    command: ["--protocol", "https"]
     ports:
       - "8081:8081"
-      - "10250-10255:10250-10255"
-    environment:
-      AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE: "true"
-      AZURE_COSMOS_EMULATOR_PARTITION_COUNT: "10"
-      AZURE_COSMOS_EMULATOR_IP_ADDRESS: "0.0.0.0"
+      - "8080:8080"
+      - "1234:1234"
+    volumes:
+      - cosmos-vnext-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -k -sS https://127.0.0.1:8081/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/ready >/dev/null || exit 1"]
       interval: 5s
       timeout: 10s
       retries: 30
@@ -49,3 +49,7 @@ services:
     command: >
       python -c "import pathlib; schema = pathlib.Path('/app/migrations/001-storage-schema.json'); print(f'Cosmos schema detected: {schema.exists()}')"
     restart: "no"
+
+volumes:
+  cosmos-data:
+  cosmos-vnext-data:

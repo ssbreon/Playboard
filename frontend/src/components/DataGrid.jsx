@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { RefreshCw, Search } from 'lucide-react'
+import { Info, RefreshCw, Search, X } from 'lucide-react'
 import { getCategoryBadgeStyle } from './CategoryBadge'
 
 const PAGE_SIZE = 50
 
 export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, categoryOptions, fetchRows, onNew, newLabel = 'New', menuItems = [], rowActions, onRowDoubleClick, onBack }) {
+  const openHintStorageKey = `blitzboard:data-grid-open-hint:${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -17,7 +18,23 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
   const [openRowMenuId, setOpenRowMenuId] = useState(null)
   const [rowMenuPosition, setRowMenuPosition] = useState(null)
   const [refreshToken, setRefreshToken] = useState(0)
+  const [showOpenHint, setShowOpenHint] = useState(() => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage.getItem(openHintStorageKey) !== 'dismissed'
+    } catch {
+      return true
+    }
+  })
   const menuRef = useRef(null)
+
+  function dismissOpenHint() {
+    setShowOpenHint(false)
+    try {
+      window.localStorage.setItem(openHintStorageKey, 'dismissed')
+    } catch {
+      return
+    }
+  }
 
   function closeRowMenu() {
     setOpenRowMenuId(null)
@@ -174,6 +191,16 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
           )}
         </div>
       </div>
+      {onRowDoubleClick && showOpenHint && pageRows.length > 0 && (
+        <div className="data-grid-open-hint" role="status">
+          <Info size={16} aria-hidden="true" />
+          <span className="data-grid-open-hint-desktop">Double-click a row to open it, or choose Open from its actions menu.</span>
+          <span className="data-grid-open-hint-touch">Choose Open from a row actions menu to open it.</span>
+          <button type="button" className="data-grid-open-hint-dismiss" aria-label="Dismiss open tip" onClick={dismissOpenHint}>
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       {loading && <p className="data-grid-status">Loading {title.toLowerCase()}...</p>}
       {error && <p className="data-grid-status data-grid-error">Unable to load {title.toLowerCase()}: {error}</p>}
       {!loading && !error && (
@@ -200,7 +227,10 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                 {pageRows.map((row) => (
                   <tr
                     key={row.id}
-                    onDoubleClick={onRowDoubleClick ? () => onRowDoubleClick(row) : undefined}
+                    onDoubleClick={onRowDoubleClick ? () => {
+                      onRowDoubleClick(row)
+                      dismissOpenHint()
+                    } : undefined}
                     style={onRowDoubleClick ? { cursor: 'pointer' } : undefined}
                   >
                     {RowIcon && (
@@ -254,6 +284,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                                       event.stopPropagation()
                                       closeRowMenu()
                                       item.onClick(row)
+                                      if (item.key === 'open') dismissOpenHint()
                                     }}
                                   >
                                     {item.icon && <item.icon className="menu-item-icon" aria-hidden="true" />}

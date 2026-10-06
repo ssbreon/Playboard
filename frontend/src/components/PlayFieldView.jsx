@@ -8,6 +8,7 @@ import {
   arrowCapPoints,
   drawingPoints,
   endZoneBandsForWindow,
+  fixedSizeEllipse,
   goalLinePositionsForWindow,
   fieldWindowForZone,
   flattenDrawings,
@@ -17,6 +18,7 @@ import {
   normalizeDrawings,
   normalizeTextAnnotations,
   normalizeZones,
+  motionPathPoints,
   pathData,
   tbarCapPoints,
   textAnnotationStyle,
@@ -51,7 +53,9 @@ export function PlayFieldView({ play, className = '' }) {
   const zones = normalizeZones(play.zones)
   const theme = getTheme(play.theme)
   const themeClass = theme.fieldClass ? ` ${theme.fieldClass}` : ''
-    const perspective = play.perspective || DEFAULT_PLAY_PERSPECTIVE
+  const noFieldDecoration = !play.fieldDecoration || play.fieldDecoration === 'None'
+  const fieldDecorationClass = noFieldDecoration ? ' no-field-decoration' : ''
+  const perspective = play.perspective || DEFAULT_PLAY_PERSPECTIVE
   const showHashMarks = Boolean(play.fieldDecoration) && play.fieldDecoration !== 'None'
   const showYardNumbers = play.fieldDecoration === 'Hash Marks and Numbers'
   const xPositions = hashMarkXPositions(play.fieldOrientation)
@@ -66,7 +70,7 @@ export function PlayFieldView({ play, className = '' }) {
   return (
     <div
       ref={fieldRef}
-      className={`play-designer-field play-field-view${themeClass} zone-windowed ${className}`.trim()}
+      className={`play-designer-field play-field-view${themeClass}${fieldDecorationClass} zone-windowed ${className}`.trim()}
     >
       <span className="play-designer-los-line" style={{ top: `${losPercent}%` }} aria-hidden="true" />
       {endZoneBands.map((band) => (
@@ -144,16 +148,19 @@ export function PlayFieldView({ play, className = '' }) {
           if (!points) return null
           const tool = DRAWING_TOOLS.find((t) => t.id === drawing.type)
           const color = drawing.color || toolColor(tool, theme)
+          const renderedPoints = tool.id === 'motion' ? motionPathPoints(points, fieldPxSize) : points
           const cap = tool.endCap === 'tbar' ? tbarCapPoints(points, fieldPxSize) : null
           const arrow = tool.arrow ? arrowCapPoints(points, fieldPxSize) : null
+          const motionCap = tool.id === 'motion' ? fixedSizeEllipse(points.at(-1), fieldPxSize, 3.5) : null
           return (
             <g key={drawing.id}>
               <path
                 className="play-designer-route"
-                d={pathData(tool.id === 'blitz' ? points.slice(0, 2) : points)}
+                d={pathData(tool.id === 'blitz' ? renderedPoints.slice(0, 2) : renderedPoints)}
                 stroke={color}
-                strokeDasharray={tool.id === 'blitz' ? BLITZ_FIRST_SEGMENT_DASH : toolDash(tool, theme) || undefined}
-                strokeLinecap={tool.id === 'dtb' ? 'round' : undefined}
+                strokeDasharray={tool.id === 'blitz' ? BLITZ_FIRST_SEGMENT_DASH : toolDash(tool, theme, drawing) || undefined}
+                strokeLinecap={tool.id === 'dtb' || (tool.id === 'line' && drawing.lineStyle === 'dotted') ? 'round' : undefined}
+                strokeLinejoin={tool.id === 'line' ? 'round' : undefined}
               />
               {tool.id === 'blitz' && points.length > 2 && (
                 <path className="play-designer-route" d={pathData(points.slice(1))} stroke={color} />
@@ -171,6 +178,7 @@ export function PlayFieldView({ play, className = '' }) {
                 />
               )}
               {arrow && <polygon points={arrow} fill={color} />}
+              {motionCap && <ellipse {...motionCap} fill={color} stroke="#fff" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
             </g>
           )
         })}
