@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, FlipHorizontal2, FlipVertical2, Pencil, Play, Plus, Printer, RotateCcw, Undo2, X } from 'lucide-react'
-import { api } from '../api'
+import { api as defaultApi } from '../api'
 import { FIELD_DECORATIONS, FIELD_ORIENTATIONS, PLAY_CATEGORIES } from './NewPlayDialog'
 import { PrintPreviewDialog } from './PrintPreviewDialog'
 import { PLAY_TEMPLATES, buildMarkersFromTemplate } from '../utils/formations'
@@ -102,7 +102,7 @@ function adjustmentDesign(slide, fallback) {
   }
 }
 
-export function PlayDesigner({ record, onClose }) {
+export function PlayDesigner({ record, onClose, api = defaultApi, readOnly = false, canDelete = true, onGuardChange }) {
   const initialTemplateId = record.template || PLAY_TEMPLATES[0].id
   const initialCategory = record.category || PLAY_CATEGORIES[0]
   const initialFieldDecoration = record.fieldDecoration || FIELD_DECORATIONS[0]
@@ -232,7 +232,7 @@ export function PlayDesigner({ record, onClose }) {
     return () => {
       cancelled = true
     }
-  }, [record.kind, record.parentId, record.id])
+  }, [record.kind, record.parentId, record.id, api])
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -382,6 +382,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   async function handleSave() {
+    if (readOnly) return false
     setSaving(true)
     setError(null)
     try {
@@ -425,12 +426,65 @@ export function PlayDesigner({ record, onClose }) {
         setSavedTheme(theme)
       }
       delete slideDraftsRef.current[activeSlideId || 'base']
+      return true
     } catch (err) {
       setError(`Unable to save: ${err.message}`)
+      return false
     } finally {
       setSaving(false)
     }
   }
+
+  function draftIsDirty(slideId, draft) {
+    const savedSlide = slides.find((slide) => slide.id === slideId)
+    const baseline = slideId === 'base' ? savedBaseDesign : adjustmentDesign(savedSlide || {}, savedBaseDesign)
+    return Object.keys(currentDesign).some((property) => JSON.stringify(draft[property]) !== JSON.stringify(baseline[property]))
+      || (slideId === 'base' ? draft.name !== savedName : draft.title !== (savedSlide?.title || 'Adjustment'))
+  }
+
+  function navigationIsDirty() {
+    return !readOnly && (isDirty || settingsOpen || Object.entries(slideDraftsRef.current).some(([slideId, draft]) => draftIsDirty(slideId, draft)))
+  }
+
+  async function saveNavigationDrafts() {
+    if (readOnly || settingsOpen) return false
+    setSaving(true)
+    setError(null)
+    const drafts = { ...slideDraftsRef.current, [activeSlideId || 'base']: captureCurrentDraft() }
+    try {
+      for (const [slideId, draft] of Object.entries(drafts).sort(([first], [second]) => first === 'base' ? -1 : second === 'base' ? 1 : 0)) {
+        if (!draftIsDirty(slideId, draft)) continue
+        const { templateId: draftTemplate, name: draftName, title: draftTitle, ...design } = draft
+        const payload = { ...design, template: draftTemplate }
+        if (slideId === 'base') {
+          if (record.kind === 'play') await api.updatePlay(record.parentId, record.id, { ...payload, name: draftName })
+          else await api.updateScoutPlay(record.parentId, record.id, { ...payload, name: draftName })
+        } else {
+          await api.updateSlide(record.parentId, record.id, slideId, { ...payload, title: draftTitle || 'Adjustment' })
+        }
+      }
+      slideDraftsRef.current = {}
+      return true
+    } catch (failure) {
+      setError(`Unable to save: ${failure.message}`)
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  useEffect(() => {
+    onGuardChange?.({ dirty: navigationIsDirty(), saving, canSave: !settingsOpen, save: saveNavigationDrafts })
+    return () => onGuardChange?.(null)
+  })
+
+  useEffect(() => {
+    function beforeUnload(event) {
+      if (navigationIsDirty()) { event.preventDefault(); event.returnValue = '' }
+    }
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => window.removeEventListener('beforeunload', beforeUnload)
+  })
 
   function handleCancel() {
     delete slideDraftsRef.current[activeSlideId || 'base']
@@ -446,7 +500,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   async function handleAddAdjustment() {
-    if (record.kind !== 'play' || slides.length >= MAX_ADJUSTMENT_SLIDES || slidesLoading || slidesLoadError) return
+    if (readOnly || record.kind !== 'play' || slides.length >= MAX_ADJUSTMENT_SLIDES || slidesLoading || slidesLoadError) return
     setSaving(true)
     setError(null)
     const currentDraft = captureCurrentDraft()
@@ -483,6 +537,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   async function handleDeleteAdjustment(slide) {
+    if (readOnly || !canDelete) return
     if (!window.confirm(`Delete "${slide.title || 'Adjustment'}"? This cannot be undone.`)) return
     setRemovingSlideId(slide.id)
     setError(null)
@@ -1181,7 +1236,7 @@ export function PlayDesigner({ record, onClose }) {
   }
 
   return (
-    <section className={`play-designer${record.kind === 'play' ? ' has-adjustment-tabs' : ''}`}>
+    <section className={`play-designer${record.kind === 'play' ? ' has-adjustment-tabs' : ''}${readOnly ? ' is-read-only' : ''}`}>
       <div className="play-designer-header">
         <button type="button" className="play-designer-back" onClick={onClose} aria-label="Back to list">
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
@@ -1193,9 +1248,9 @@ export function PlayDesigner({ record, onClose }) {
           value={name}
           onChange={(event) => setName(event.target.value)}
           aria-label="Play name"
-          readOnly={Boolean(activeSlideId)}
+          readOnly={readOnly || Boolean(activeSlideId)}
         />
-        <button type="button" className="play-designer-back" onClick={openSettings} aria-label="Play settings">
+        <button type="button" className="play-designer-back" onClick={openSettings} disabled={readOnly} aria-label="Play settings">
           <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
             <path
               fill="currentColor"
@@ -1206,7 +1261,7 @@ export function PlayDesigner({ record, onClose }) {
         <button type="button" className="play-designer-cancel" onClick={handleCancel} disabled={saving || !isDirty}>
           Cancel
         </button>
-        <button type="button" className="play-designer-save" onClick={handleSave} disabled={saving || !isDirty}>
+        <button type="button" className="play-designer-save" onClick={handleSave} disabled={readOnly || saving || !isDirty}>
           {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
@@ -2119,7 +2174,7 @@ export function PlayDesigner({ record, onClose }) {
                       activateSlide(slide.id)
                       setEditingSlideId(slide.id)
                     }}
-                    disabled={saving || Boolean(removingSlideId)}
+                    disabled={readOnly || saving || Boolean(removingSlideId)}
                   >
                     <Pencil size={13} aria-hidden="true" />
                   </button>
@@ -2129,7 +2184,7 @@ export function PlayDesigner({ record, onClose }) {
                     aria-label={`Delete ${title}`}
                     title={`Delete ${title}`}
                     onClick={() => handleDeleteAdjustment(slide)}
-                    disabled={saving || removingSlideId === slide.id}
+                    disabled={readOnly || !canDelete || saving || removingSlideId === slide.id}
                   >
                     <X size={15} aria-hidden="true" />
                   </button>
@@ -2140,7 +2195,7 @@ export function PlayDesigner({ record, onClose }) {
                 type="button"
                 className="play-designer-tab play-designer-add-adjustment"
                 onClick={handleAddAdjustment}
-                disabled={slidesLoading || slidesLoadError || saving || slides.length >= MAX_ADJUSTMENT_SLIDES}
+                disabled={readOnly || slidesLoading || slidesLoadError || saving || slides.length >= MAX_ADJUSTMENT_SLIDES}
                 title={slides.length >= MAX_ADJUSTMENT_SLIDES ? 'Maximum of 3 adjustments' : 'Add an adjustment slide'}
                 aria-label={slides.length >= MAX_ADJUSTMENT_SLIDES ? 'Maximum of 3 adjustments reached' : 'Add Adjustment'}
               >

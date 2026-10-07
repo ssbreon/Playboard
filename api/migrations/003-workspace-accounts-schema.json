@@ -1,0 +1,33 @@
+{
+  "version": 3,
+  "provider": "azure-cosmos-nosql",
+  "description": "Adds workspace-scoped account records and conservative quota reservations. No production seed data or automatic ownership transfers.",
+  "container": {
+    "id": "playboard",
+    "partitionKeyPath": "/partitionKey",
+    "entities": {
+      "profiles": ["id", "name", "email", "preferences"],
+      "workspaces": ["id", "kind", "name", "ownerId", "subscription", "defaults"],
+      "memberships": ["id", "userId", "workspaceId", "role"],
+      "invitations": ["id", "workspaceId", "email", "role", "status", "expiresAt", "tokenHash"],
+      "outbox": ["id", "workspaceId", "invitationId", "status", "payload"],
+      "workspaceUsage": ["id", "partitionKey", "counts"],
+      "operations": ["id", "partitionKey", "scope", "createdAt"]
+    },
+    "newContentFields": ["workspaceId", "createdBy"],
+    "immutableContentFields": ["id", "ownerId", "workspaceId", "createdBy", "parentId", "createdAt"],
+    "controlPartition": "workspaceUsage and workspace mutation locks share the selected workspaceId partition; user initialization locks use a user-prefixed partition",
+    "legacyCompatibility": "Existing ownerId records without workspaceId remain visible only in that owner's stable hashed Individual workspace. Backfill must preserve ownerId and parent-child scope."
+  },
+  "quotasPerWorkspace": {
+    "playbooks": 100,
+    "gamePlans": 100,
+    "plays": 5000,
+    "scoutPlays": 5000,
+    "teamSeats": 10
+  },
+  "invitationDays": 7,
+  "trialDays": 14,
+  "renewalGraceDays": 7,
+  "contentRetentionMonths": 18
+}

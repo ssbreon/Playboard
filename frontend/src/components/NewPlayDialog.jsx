@@ -7,14 +7,14 @@ export const PLAY_CATEGORIES = ['Front', 'Stunt', 'Blitz', 'Coverage', 'Play Cal
 export const FIELD_DECORATIONS = ['None', 'Hash Marks', 'Hash Marks and Numbers']
 export const FIELD_ORIENTATIONS = ['High School', 'NCAA', 'NFL']
 
-export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel, onCreate }) {
+export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel, onCreate, defaultTheme = DEFAULT_THEME_ID, defaultFieldOrientation = FIELD_ORIENTATIONS[0] }) {
   const [name, setName] = useState('')
   const [templateId, setTemplateId] = useState(PLAY_TEMPLATES[0].id)
   const [category, setCategory] = useState(PLAY_CATEGORIES[0])
   const [fieldDecoration, setFieldDecoration] = useState(FIELD_DECORATIONS[0])
   const [fieldZone, setFieldZone] = useState(DEFAULT_FIELD_ZONE)
-  const [fieldOrientation, setFieldOrientation] = useState(FIELD_ORIENTATIONS[0])
-  const [themeId, setThemeId] = useState(DEFAULT_THEME_ID)
+  const [fieldOrientation, setFieldOrientation] = useState(defaultFieldOrientation)
+  const [themeId, setThemeId] = useState(defaultTheme)
 
   if (!open) return null
 
@@ -28,8 +28,8 @@ export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel
     setCategory(PLAY_CATEGORIES[0])
     setFieldDecoration(FIELD_DECORATIONS[0])
     setFieldZone(DEFAULT_FIELD_ZONE)
-    setFieldOrientation(FIELD_ORIENTATIONS[0])
-    setThemeId(DEFAULT_THEME_ID)
+    setFieldOrientation(defaultFieldOrientation)
+    setThemeId(defaultTheme)
   }
 
   function handleCancel() {
@@ -38,8 +38,8 @@ export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel
     setCategory(PLAY_CATEGORIES[0])
     setFieldDecoration(FIELD_DECORATIONS[0])
     setFieldZone(DEFAULT_FIELD_ZONE)
-    setFieldOrientation(FIELD_ORIENTATIONS[0])
-    setThemeId(DEFAULT_THEME_ID)
+    setFieldOrientation(defaultFieldOrientation)
+    setThemeId(defaultTheme)
     onCancel()
   }
 

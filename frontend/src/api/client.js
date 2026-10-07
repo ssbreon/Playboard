@@ -21,22 +21,49 @@ const listQuery = (category, namePrefix) => {
   return query ? `?${query}` : ''
 }
 
-async function request(path, options = {}) {
+async function sendRequest(path, options = {}, workspaceId) {
   const { headers = {}, ...fetchOptions } = options
   const response = await fetch(`${baseUrl}/api${path}`, {
     ...fetchOptions,
-    headers: { 'Content-Type': 'application/json', ...authenticationHeaders(path), ...headers },
+    headers: { 'Content-Type': 'application/json', ...authenticationHeaders(path), ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}), ...headers },
   })
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}))
-    throw new Error(detail.error?.message || `Request failed with ${response.status}`)
+    const error = new Error(detail.error?.message || `Request failed with ${response.status}`)
+    error.code = detail.error?.code
+    error.status = response.status
+    throw error
   }
   return response.status === 204 ? null : response.json()
 }
 
-export const api = {
+export function createApi(workspaceId, onMutationState) {
+  const request = async (path, options = {}) => {
+    const mutation = ['POST', 'PATCH', 'DELETE'].includes(options.method)
+    if (mutation) onMutationState?.(1)
+    try {
+      return await sendRequest(path, options, workspaceId)
+    } finally {
+      if (mutation) onMutationState?.(-1)
+    }
+  }
+  return {
   health: () => request('/health'),
   me: () => request('/me'),
+  updateProfile: (payload) => request('/me', { method: 'PATCH', body: JSON.stringify(payload) }),
+  updatePreferences: (payload) => request('/me/preferences', { method: 'PATCH', body: JSON.stringify(payload) }),
+  workspaces: () => request('/workspaces'),
+  workspace: () => request('/workspace'),
+  updateWorkspace: (payload) => request('/workspace', { method: 'PATCH', body: JSON.stringify(payload) }),
+  members: () => request('/workspace/members'),
+  invitations: () => request('/workspace/invitations'),
+  invite: (payload) => request('/workspace/invitations', { method: 'POST', body: JSON.stringify(payload) }),
+  revokeInvitation: (id) => request(`/workspace/invitations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  resendInvitation: (id) => request(`/workspace/invitations/${encodeURIComponent(id)}/resend`, { method: 'POST', body: '{}' }),
+  acceptInvitation: (token) => request('/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) }),
+  updateMember: (id, role) => request(`/workspace/members/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+  removeMember: (id) => request(`/workspace/members/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  billing: () => request('/workspace/billing'),
   search: (query) => request(`/search${query ? `?q=${encodeURIComponent(query)}` : ''}`),
   listPlaybooks: (category, namePrefix) => request(`/playbooks${listQuery(category, namePrefix)}`),
   createPlaybook: (payload) => request('/playbooks', { method: 'POST', body: JSON.stringify(payload) }),
@@ -65,4 +92,7 @@ export const api = {
   getScoutPlay: (gamePlanId, id) => request(`/game-plans/${gamePlanId}/scout-plays/${id}`),
   updateScoutPlay: (gamePlanId, id, payload) => request(`/game-plans/${gamePlanId}/scout-plays/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteScoutPlay: (gamePlanId, id) => request(`/game-plans/${gamePlanId}/scout-plays/${id}`, { method: 'DELETE' }),
+  }
 }
+
+export const api = createApi()

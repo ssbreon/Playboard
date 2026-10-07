@@ -119,7 +119,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
       </div>
       <div className="data-grid-toolbar">
         <div className="data-grid-toolbar-actions">
-          <button type="button" className="toolbar-new-button" onClick={onNew}>
+          <button type="button" className="toolbar-new-button" onClick={onNew} disabled={!onNew}>
             <svg className="toolbar-icon" viewBox="0 0 24 24" role="presentation" aria-hidden="true">
               <path fill="currentColor" d="M11 5h2v6h6v2h-6v6H5v-2h6z" />
             </svg>
