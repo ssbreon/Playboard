@@ -26,6 +26,10 @@ Entra, Paddle, or Resend integration yet.
 - Individual and Team switcher under the app-bar user icon, with per-tab selection.
 - Workspace-bound requests, isolated libraries, scoped Owner/Admin/Coach capabilities.
 - Save/Discard/Cancel navigation, including base-play and adjustment drafts.
+- Account-menu Sign Out uses the same unsaved-change guard, clears the selected
+	workspace, and blocks authenticated frontend requests for this tab. The signed-out
+	state survives reloads; Sign In restores the configured development identity.
+	This is local session handling, not production provider logout or token revocation.
 - Team name/defaults, roster roles/removal, seven-day invitations, resend/revoke,
 	reserved seats, and recipient-bound single-use acceptance.
 - Encrypted email capture only: no invitations are sent to real recipients.

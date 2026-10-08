@@ -1,8 +1,29 @@
 const baseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 const authMode = import.meta.env.VITE_AUTH_MODE || ''
+const signedOutKey = 'blitzboard:signed-out'
+let signedOut = false
+try { signedOut = sessionStorage.getItem(signedOutKey) === 'true' } catch { signedOut = false }
+
+export const isDevelopmentAuth = authMode === 'development'
+export function isSignedOut() { return signedOut }
+
+export function signOut() {
+  signedOut = true
+  try {
+    sessionStorage.setItem(signedOutKey, 'true')
+    sessionStorage.removeItem('blitzboard:workspace')
+  } catch { return }
+}
+
+export function signIn() {
+  if (!isDevelopmentAuth) throw new Error('Sign-in provider is not connected')
+  signedOut = false
+  try { sessionStorage.removeItem(signedOutKey) } catch { return }
+}
 
 function authenticationHeaders(path) {
   if (path === '/health') return {}
+  if (signedOut) throw new Error('You are signed out')
   if (authMode !== 'development') return {}
 
   const secret = import.meta.env.VITE_DEV_AUTH_SECRET

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, FlipHorizontal2, FlipVertical2, Pencil, Play, Plus, Printer, RotateCcw, Undo2, X } from 'lucide-react'
+import { Check, FlipHorizontal2, FlipVertical2, Pencil, Play, Plus, Printer, RotateCcw, Settings, Undo2, X } from 'lucide-react'
 import { api as defaultApi } from '../api'
 import { FIELD_DECORATIONS, FIELD_ORIENTATIONS, PLAY_CATEGORIES } from './NewPlayDialog'
 import { PrintPreviewDialog } from './PrintPreviewDialog'
@@ -1286,7 +1286,7 @@ export function PlayDesigner({ record, onClose, api = defaultApi, readOnly = fal
       {settingsOpen && (
         <div className="dialog-overlay" onClick={() => setSettingsOpen(false)}>
           <form className="dialog-panel" onClick={(event) => event.stopPropagation()} onSubmit={handleSettingsSave}>
-            <h2>Play Settings</h2>
+            <h2><Settings size={26} strokeWidth={1.8} aria-hidden="true" />Play Settings</h2>
             <label className="dialog-field">
               <span>Category</span>
               <select value={draftCategory} onChange={(event) => setDraftCategory(event.target.value)}>

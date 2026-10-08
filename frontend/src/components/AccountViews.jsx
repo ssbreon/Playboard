@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Copy, CreditCard, Mail, Save, Trash2, Users, UserRound, Settings } from 'lucide-react'
+import { DataGrid } from './DataGrid'
 import { PLAY_THEMES } from '../utils/themes'
 
 const TITLES = { profile: 'Profile', settings: 'Settings', team: 'Team', billing: 'Membership & Billing' }
 const ICONS = { profile: UserRound, settings: Settings, team: Users, billing: CreditCard }
+const BILLING_TABS = [{ id: 'membership', label: 'Membership' }, { id: 'usage', label: 'Workspace Usage' }]
+const TEAM_TABS = [{ id: 'workspace', label: 'Workspace' }, { id: 'staff', label: 'Staff' }, { id: 'invitations', label: 'Invitations' }]
 const LABELS = { playbooks: 'Playbooks', gamePlans: 'Game plans', plays: 'Plays', scoutPlays: 'Scouting plays' }
 const money = (cents) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
 const date = (value, timeZone) => value ? new Date(value).toLocaleDateString(undefined, timeZone ? { timeZone } : undefined) : 'Not started'
 
-export function AccountViews({ view, user, workspace, api, onUserUpdated, onWorkspaceUpdated, onGuardChange }) {
+export function AccountViews({ view, user, workspace, api, onUserUpdated, onWorkspaceUpdated, onGuardChange, onDismiss, onSaved }) {
   const [form, setForm] = useState(() => view === 'profile'
     ? { name: user.name || '', coachingTitle: user.coachingTitle || '' }
     : view === 'team' ? { name: workspace.name, ...workspace.defaults }
@@ -18,13 +21,17 @@ export function AccountViews({ view, user, workspace, api, onUserUpdated, onWork
   const [invitations, setInvitations] = useState([])
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState('coach')
+  const [invitationCopyFeedback, setInvitationCopyFeedback] = useState(null)
   const [deliveryMode, setDeliveryMode] = useState(null)
   const [billing, setBilling] = useState(null)
+  const [billingTab, setBillingTab] = useState('membership')
+  const [teamTab, setTeamTab] = useState('workspace')
   const [loading, setLoading] = useState(view === 'team' || view === 'billing')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState('')
   const dirty = JSON.stringify(form) !== JSON.stringify(savedForm)
+  const isAccountDialog = ['settings', 'profile', 'billing', 'team'].includes(view)
   const HeadingIcon = ICONS[view]
   const teamEditable = workspace.capabilities.manageTeam
 
@@ -42,6 +49,11 @@ export function AccountViews({ view, user, workspace, api, onUserUpdated, onWork
 
   async function save(event) {
     event?.preventDefault()
+    if (isAccountDialog && view === 'team' && inviteEmail) return false
+    if (isAccountDialog && !dirty) {
+      onSaved?.()
+      return true
+    }
     setSaving(true)
     setError(null)
     setNotice('')
@@ -58,6 +70,7 @@ export function AccountViews({ view, user, workspace, api, onUserUpdated, onWork
       }
       setSavedForm(form)
       setNotice('Saved')
+      if (isAccountDialog) onSaved?.()
       return true
     } catch (failure) {
       setError(failure.message)
@@ -75,6 +88,29 @@ export function AccountViews({ view, user, workspace, api, onUserUpdated, onWork
   function change(key, value) {
     setForm((current) => ({ ...current, [key]: value }))
     setNotice('')
+  }
+
+  function handleBillingTabKeyDown(event) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const currentIndex = BILLING_TABS.findIndex((tab) => tab.id === billingTab)
+    const nextIndex = event.key === 'Home' ? 0
+      : event.key === 'End' ? BILLING_TABS.length - 1
+        : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + BILLING_TABS.length) % BILLING_TABS.length
+    setBillingTab(BILLING_TABS[nextIndex].id)
+    event.currentTarget.querySelectorAll('[role="tab"]')[nextIndex]?.focus()
+  }
+
+  function handleTeamTabKeyDown(event) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const tabs = TEAM_TABS.filter((tab) => tab.id !== 'invitations' || workspace.role !== 'coach')
+    const currentIndex = tabs.findIndex((tab) => tab.id === teamTab)
+    const nextIndex = event.key === 'Home' ? 0
+      : event.key === 'End' ? tabs.length - 1
+        : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+    setTeamTab(tabs[nextIndex].id)
+    event.currentTarget.querySelectorAll('[role="tab"]')[nextIndex]?.focus()
   }
 
   async function memberAction(member, action, role) {
@@ -115,23 +151,24 @@ export function AccountViews({ view, user, workspace, api, onUserUpdated, onWork
   }
 
   async function copyInvitation(invite) {
+    setInvitationCopyFeedback(null)
     try {
       await navigator.clipboard.writeText(invite.capturedUrl)
-      setNotice('Invitation link copied')
+      setInvitationCopyFeedback({ id: invite.id, message: 'Invitation link copied', failed: false })
     } catch {
-      setError('Unable to copy the invitation link')
+      setInvitationCopyFeedback({ id: invite.id, message: 'Unable to copy the invitation link', failed: true })
     }
   }
 
   const preferences = <>
-    <label className="dialog-field"><span>Default diagram theme</span>
-      <select value={form.theme || 'color'} onChange={(event) => change('theme', event.target.value)}>
-        {PLAY_THEMES.map((theme) => <option key={theme.id} value={theme.id}>{theme.label}</option>)}
-      </select>
-    </label>
     <label className="dialog-field"><span>Default field standard</span>
       <select value={form.fieldOrientation || 'High School'} onChange={(event) => change('fieldOrientation', event.target.value)}>
         <option value="High School">High School</option><option value="NCAA">NCAA</option><option value="NFL">NFL</option>
+      </select>
+    </label>
+    <label className="dialog-field"><span>Default diagram theme</span>
+      <select value={form.theme || 'color'} onChange={(event) => change('theme', event.target.value)}>
+        {PLAY_THEMES.map((theme) => <option key={theme.id} value={theme.id}>{theme.label}</option>)}
       </select>
     </label>
     {view === 'settings' && <label className="dialog-field"><span>Timezone</span>
@@ -139,85 +176,184 @@ export function AccountViews({ view, user, workspace, api, onUserUpdated, onWork
     </label>}
   </>
 
-  return <main className="account-view">
-    <header className="account-view-heading"><HeadingIcon size={24} aria-hidden="true" /><h1>{TITLES[view]}</h1></header>
-    <div className="account-view-context"><span>{workspace.name}</span><span className="account-role">{workspace.role}</span></div>
+  const content = <main
+    className={`account-view${isAccountDialog ? ' account-form-dialog dialog-panel' : ''}${view === 'team' ? ' account-team-dialog' : ''}`}
+    role={isAccountDialog ? 'dialog' : undefined}
+    aria-modal={isAccountDialog ? 'true' : undefined}
+    aria-labelledby={isAccountDialog ? 'account-view-title' : undefined}
+    onClick={isAccountDialog ? (event) => event.stopPropagation() : undefined}
+  >
+    {isAccountDialog
+      ? <h2 id="account-view-title"><HeadingIcon size={26} strokeWidth={1.8} aria-hidden="true" />{TITLES[view]}</h2>
+      : <header className="account-view-heading"><HeadingIcon size={24} aria-hidden="true" /><h1 id="account-view-title">{TITLES[view]}</h1></header>}
+    {isAccountDialog
+      ? <dl className="account-view-context account-dialog-context">
+          <div><dt>Current workspace</dt><dd>{workspace.name}</dd></div>
+          <div><dt>Your role</dt><dd className="account-role account-dialog-role">{workspace.role}</dd></div>
+        </dl>
+      : <div className="account-view-context"><span>{workspace.name}</span><span className="account-role">{workspace.role}</span></div>}
     {error && <p className="account-error" role="alert">{error}</p>}
     {notice && <p className="account-notice" role="status">{notice}</p>}
     {loading && <p role="status">Loading...</p>}
 
-    {['profile', 'settings', 'team'].includes(view) && <form className="account-form" onSubmit={save}>
-      <fieldset disabled={saving || (view === 'team' && !teamEditable)}>
+    {['profile', 'settings'].includes(view) && <form className="account-form" onSubmit={save}>
+      <fieldset disabled={saving}>
         {view === 'profile' && <>
           <label className="dialog-field"><span>Display name</span><input required maxLength={120} value={form.name} onChange={(event) => change('name', event.target.value)} /></label>
           <label className="dialog-field"><span>Coaching title</span><input maxLength={120} value={form.coachingTitle} onChange={(event) => change('coachingTitle', event.target.value)} /></label>
           <label className="dialog-field"><span>Email</span><input value={user.email || ''} placeholder="Not configured" readOnly /></label>
         </>}
         {view === 'settings' && preferences}
-        {view === 'team' && <>
-          <label className="dialog-field"><span>Team name</span><input required maxLength={120} value={form.name} onChange={(event) => change('name', event.target.value)} /></label>
-          {preferences}
-        </>}
       </fieldset>
-      {(view !== 'team' || teamEditable) && <div className="account-form-actions">
-        <button type="button" className="dialog-cancel" disabled={!dirty || saving} onClick={() => { setForm(savedForm); setNotice('') }}>Cancel</button>
-        <button type="submit" className="dialog-create" disabled={!dirty || saving}><Save size={16} aria-hidden="true" />{saving ? 'Saving...' : 'Save'}</button>
-      </div>}
+      <div className="account-form-actions">
+        <button type="button" className="dialog-cancel" disabled={saving} onClick={() => onDismiss?.()}>Cancel</button>
+        <button type="submit" className="dialog-create" disabled={saving}><Save size={16} aria-hidden="true" />{saving ? 'Saving...' : 'OK'}</button>
+      </div>
     </form>}
 
-    {view === 'team' && !loading && <section className="account-section" aria-label="Team staff">
-      <h2>Staff <span className="account-count">{workspace.seatsUsed} / {workspace.seatLimit} seats reserved or active</span></h2>
-      <div className="account-table-wrap"><table className="account-table"><thead><tr><th>Name</th><th>Role</th><th><span className="sr-only">Actions</span></th></tr></thead>
-        <tbody>{members.map((member) => <tr key={member.userId}><td>{member.name}</td><td>
-          {teamEditable && member.role !== 'owner' ? <select aria-label={`Role for ${member.name}`} value={member.role} disabled={saving} onChange={(event) => memberAction(member, 'role', event.target.value)}>
-            <option value="coach">Coach</option><option value="admin">Admin</option>
-          </select> : <span className="account-role">{member.role}</span>}
-        </td><td>{teamEditable && member.role !== 'owner' && <button type="button" className="account-icon-button" title={`Remove ${member.name}`} aria-label={`Remove ${member.name}`} disabled={saving} onClick={() => memberAction(member, 'remove')}><Trash2 size={16} /></button>}</td></tr>)}</tbody>
-      </table></div>
-    </section>}
+    {view === 'team' && <div className="account-billing-tabs" role="tablist" aria-label="Team sections" onKeyDown={handleTeamTabKeyDown}>
+      {TEAM_TABS.filter((tab) => tab.id !== 'invitations' || workspace.role !== 'coach').map((tab) => <button
+        key={tab.id}
+        id={`account-team-tab-${tab.id}`}
+        type="button"
+        role="tab"
+        aria-selected={teamTab === tab.id}
+        aria-controls={`account-team-panel-${tab.id}`}
+        tabIndex={teamTab === tab.id ? 0 : -1}
+        onClick={() => setTeamTab(tab.id)}
+      >{tab.label}</button>)}
+    </div>}
+    {view === 'team' && <div className="account-team-panels">
+      <div id="account-team-panel-workspace" className={`account-team-panel${teamTab === 'workspace' ? ' active' : ''}`} role="tabpanel" aria-labelledby="account-team-tab-workspace" aria-hidden={teamTab !== 'workspace'} inert={teamTab !== 'workspace'} tabIndex={teamTab === 'workspace' ? 0 : -1}>
+        <form className="account-form" onSubmit={save}>
+          <fieldset disabled={saving || !teamEditable}>
+            <label className="dialog-field"><span>Team name</span><input required maxLength={120} value={form.name} onChange={(event) => change('name', event.target.value)} /></label>
+            {preferences}
+          </fieldset>
+        </form>
+      </div>
+      <div id="account-team-panel-staff" className={`account-team-panel${teamTab === 'staff' ? ' active' : ''}`} role="tabpanel" aria-labelledby="account-team-tab-staff" aria-hidden={teamTab !== 'staff'} inert={teamTab !== 'staff'} tabIndex={teamTab === 'staff' ? 0 : -1}>
+        <section className="account-section" aria-label="Team staff">
+          <p className="account-team-summary">{workspace.seatsUsed} / {workspace.seatLimit} seats reserved or active</p>
+          {!loading && <div className="account-table-wrap"><table className="account-table data-grid-table"><thead><tr><th className="data-grid-type-header" scope="col" aria-label="Type" /><th>Name</th><th>Role</th><th><span className="sr-only">Actions</span></th></tr></thead>
+            <tbody>{members.map((member) => <tr key={member.userId}><td className="data-grid-type-cell" aria-label="Staff member" title="Staff member"><UserRound size={17} strokeWidth={2} aria-hidden="true" /></td><td>{member.name}</td><td>
+              {teamEditable && member.role !== 'owner' ? <select aria-label={`Role for ${member.name}`} value={member.role} disabled={saving} onChange={(event) => memberAction(member, 'role', event.target.value)}>
+                <option value="coach">Coach</option><option value="admin">Admin</option>
+              </select> : <span className="account-role">{member.role}</span>}
+            </td><td>{teamEditable && member.role !== 'owner' && <button type="button" className="account-icon-button" title={`Remove ${member.name}`} aria-label={`Remove ${member.name}`} disabled={saving} onClick={() => memberAction(member, 'remove')}><Trash2 size={16} /></button>}</td></tr>)}</tbody>
+          </table></div>}
+        </section>
+      </div>
+      {workspace.role !== 'coach' && <div id="account-team-panel-invitations" className={`account-team-panel${teamTab === 'invitations' ? ' active' : ''}`} role="tabpanel" aria-labelledby="account-team-tab-invitations" aria-hidden={teamTab !== 'invitations'} inert={teamTab !== 'invitations'} tabIndex={teamTab === 'invitations' ? 0 : -1}>
+        <section className="account-section" aria-label="Team invitations">
+          {teamEditable && <form className="account-invite-form" onSubmit={(event) => { event.preventDefault(); inviteAction('send') }}>
+            <label className="dialog-field"><span>Email</span><input type="email" required maxLength={254} value={inviteEmail} disabled={saving} onChange={(event) => setInviteEmail(event.target.value)} /></label>
+            <label className="dialog-field"><span>Role</span><select value={inviteRole} disabled={saving} onChange={(event) => setInviteRole(event.target.value)}><option value="coach">Coach</option><option value="admin">Admin</option></select></label>
+            <button type="submit" className="dialog-create" disabled={saving || workspace.seatsUsed >= workspace.seatLimit}><Mail size={16} aria-hidden="true" />Invite</button>
+          </form>}
+          {deliveryMode === 'capture' && <p className="account-team-summary">Captured locally</p>}
+          {!loading && <div className="account-invitations"><DataGrid
+            title="Invitations"
+            rowIcon={Mail}
+            rowType="Email invitation"
+            compact
+            items={invitations}
+            busy={saving}
+            columns={[
+              { key: 'email', header: 'Email', render: (email, invite) => <>
+                <span>{email}</span>
+                {invitationCopyFeedback?.id === invite.id && <span className={`account-invitation-copy-feedback${invitationCopyFeedback.failed ? ' failed' : ''}`} role={invitationCopyFeedback.failed ? 'alert' : 'status'}>{invitationCopyFeedback.message}</span>}
+              </> },
+              { key: 'role', header: 'Role', render: (role) => <span className="account-role">{role}</span> },
+              { key: 'status', header: 'Status', render: (status) => <span className="account-invitation-status" data-status={status}>{status}</span> },
+              { key: 'expiresAt', header: 'Expires', render: (expiresAt) => date(expiresAt, user.preferences?.timezone) },
+            ]}
+            rowActionLabel={(invite) => `Invitation actions for ${invite.email}`}
+            rowActions={(invite) => [
+              { key: 'copy', label: 'Copy Invitation Link', icon: Copy, disabled: !invite.capturedUrl, onClick: copyInvitation },
+              { key: 'resend', label: 'Resend Invitation', icon: Mail, disabled: !teamEditable || invite.status !== 'pending', onClick: (row) => inviteAction('resend', row) },
+              { key: 'revoke', label: 'Revoke Invitation', icon: Trash2, destructive: true, disabled: !teamEditable || invite.status !== 'pending', onClick: (row) => inviteAction('revoke', row) },
+            ]}
+          /></div>}
+        </section>
+      </div>}
+    </div>}
 
-    {view === 'team' && workspace.role !== 'coach' && <section className="account-section" aria-label="Team invitations">
-      <h2>Invitations {deliveryMode === 'capture' && <span className="account-count">Captured locally</span>}</h2>
-      {teamEditable && <form className="account-invite-form" onSubmit={(event) => { event.preventDefault(); inviteAction('send') }}>
-        <label className="dialog-field"><span>Email</span><input type="email" required maxLength={254} value={inviteEmail} disabled={saving} onChange={(event) => setInviteEmail(event.target.value)} /></label>
-        <label className="dialog-field"><span>Role</span><select value={inviteRole} disabled={saving} onChange={(event) => setInviteRole(event.target.value)}><option value="coach">Coach</option><option value="admin">Admin</option></select></label>
-        <button type="submit" className="dialog-create" disabled={saving || workspace.seatsUsed >= workspace.seatLimit}><Mail size={16} aria-hidden="true" />Invite</button>
-      </form>}
-      {!loading && invitations.length === 0 && <p>No invitations</p>}
-      <div className="account-invitations">{invitations.map((invite) => <div className="account-invitation" key={invite.id}>
-        <div><strong>{invite.email}</strong><span className="account-role">{invite.role} - {invite.status}</span><small>Expires {date(invite.expiresAt, user.preferences?.timezone)}</small></div>
-        <div className="account-invitation-actions">
-          {invite.capturedUrl && <button type="button" className="account-icon-button" title="Copy captured invitation link" aria-label={`Copy invitation for ${invite.email}`} onClick={() => copyInvitation(invite)}><Copy size={16} /></button>}
-          {teamEditable && invite.status === 'pending' && <>
-            <button type="button" className="account-icon-button" disabled={saving} title="Resend invitation" aria-label={`Resend invitation for ${invite.email}`} onClick={() => inviteAction('resend', invite)}><Mail size={16} /></button>
-            <button type="button" className="account-icon-button" disabled={saving} title="Revoke invitation" aria-label={`Revoke invitation for ${invite.email}`} onClick={() => inviteAction('revoke', invite)}><Trash2 size={16} /></button>
+    {view === 'billing' && <div className="account-billing-tabs" role="tablist" aria-label="Membership and billing" onKeyDown={handleBillingTabKeyDown}>
+      {BILLING_TABS.map((tab) => <button
+        key={tab.id}
+        id={`account-billing-tab-${tab.id}`}
+        type="button"
+        role="tab"
+        aria-selected={billingTab === tab.id}
+        aria-controls={`account-billing-panel-${tab.id}`}
+        tabIndex={billingTab === tab.id ? 0 : -1}
+        onClick={() => setBillingTab(tab.id)}
+      >{tab.label}</button>)}
+    </div>}
+    {view === 'billing' && !loading && billing && <div className="account-billing-panels">
+      <div
+        id="account-billing-panel-membership"
+        className={`account-billing-panel${billingTab === 'membership' ? ' active' : ''}`}
+        role="tabpanel"
+        aria-labelledby="account-billing-tab-membership"
+        aria-hidden={billingTab !== 'membership'}
+        inert={billingTab !== 'membership'}
+        tabIndex={billingTab === 'membership' ? 0 : -1}
+      >
+        <section className="account-section">
+          <dl className="account-details">
+            <dt>Membership type</dt><dd>{workspace.kind === 'team' ? 'Team' : 'Individual'}</dd>
+            <dt>Status</dt><dd className="account-role">{workspace.subscription.status}</dd>
+            <dt>Billing interval</dt><dd>{workspace.subscription.interval === 'year' ? 'Annual' : workspace.subscription.interval === 'month' ? 'Monthly' : 'Trial'}</dd>
+            <dt>{workspace.subscription.status === 'trialing' ? 'Trial ends' : 'Paid through'}</dt><dd>{date(workspace.subscription.trialEndsAt || workspace.subscription.periodEndsAt, user.preferences?.timezone)}</dd>
+            {workspace.deletionDueAt && <><dt>Content retained until</dt><dd>{date(workspace.deletionDueAt, user.preferences?.timezone)}</dd></>}
+            {workspace.subscription.source === 'development_fixture' && <><dt>Billing source</dt><dd>Test subscription</dd></>}
+            {workspace.kind === 'team' && <><dt>Seats</dt><dd>{workspace.seatsUsed} / {workspace.seatLimit}</dd></>}
+          </dl>
+          {billing.managedByTeam ? <p>Managed by Team Owner</p> : <>
+            <div className="account-price-row"><div><strong>{money(billing.prices.month)}</strong><span>Monthly, tax included</span></div><div><strong>{money(billing.prices.year)}</strong><span>Annual, paid upfront, tax included</span></div></div>
+            <button type="button" className="dialog-create" disabled={!billing.connected} title={billing.provider === 'mock' ? 'Billing is simulated locally' : 'Paddle is not connected'}><CreditCard size={16} aria-hidden="true" />Manage Billing</button>
           </>}
-        </div>
-      </div>)}</div>
-    </section>}
-
-    {view === 'billing' && !loading && billing && <>
-      <section className="account-section">
-        <h2>{workspace.kind === 'team' ? 'Team' : 'Individual'} Membership</h2>
-        <dl className="account-details">
-          <dt>Status</dt><dd className="account-role">{workspace.subscription.status}</dd>
-          <dt>Billing interval</dt><dd>{workspace.subscription.interval === 'year' ? 'Annual' : workspace.subscription.interval === 'month' ? 'Monthly' : 'Trial'}</dd>
-          <dt>{workspace.subscription.status === 'trialing' ? 'Trial ends' : 'Paid through'}</dt><dd>{date(workspace.subscription.trialEndsAt || workspace.subscription.periodEndsAt, user.preferences?.timezone)}</dd>
-          {workspace.deletionDueAt && <><dt>Content retained until</dt><dd>{date(workspace.deletionDueAt, user.preferences?.timezone)}</dd></>}
-          {workspace.subscription.source === 'development_fixture' && <><dt>Billing source</dt><dd>Local mock</dd></>}
-          {workspace.kind === 'team' && <><dt>Seats</dt><dd>{workspace.seatsUsed} / {workspace.seatLimit}</dd></>}
-        </dl>
-        {billing.managedByTeam ? <p>Managed by Team Owner</p> : <>
-          <div className="account-price-row"><div><strong>{money(billing.prices.month)}</strong><span>Monthly, tax included</span></div><div><strong>{money(billing.prices.year)}</strong><span>Annual, paid upfront, tax included</span></div></div>
-          <button type="button" className="dialog-create" disabled={!billing.connected} title={billing.provider === 'mock' ? 'Billing is simulated locally' : 'Paddle is not connected'}><CreditCard size={16} aria-hidden="true" />Manage Billing</button>
-        </>}
-      </section>
-      <section className="account-section" aria-label="Content usage"><h2>Workspace Usage</h2>
-        <div className="account-usage">{Object.entries(workspace.limits).map(([type, limit]) => <div key={type}>
-          <div><span>{LABELS[type]}</span><span>{workspace.usage[type].toLocaleString()} / {limit.toLocaleString()}</span></div>
-          <meter min={0} max={limit} value={Math.min(workspace.usage[type], limit)} aria-label={`${LABELS[type]} usage`} />
-        </div>)}</div>
-      </section>
-    </>}
+        </section>
+      </div>
+      <div
+        id="account-billing-panel-usage"
+        className={`account-billing-panel${billingTab === 'usage' ? ' active' : ''}`}
+        role="tabpanel"
+        aria-labelledby="account-billing-tab-usage"
+        aria-hidden={billingTab !== 'usage'}
+        inert={billingTab !== 'usage'}
+        tabIndex={billingTab === 'usage' ? 0 : -1}
+      >
+        <section className="account-section" aria-label="Workspace Usage">
+          <div className="account-usage">{Object.entries(workspace.limits).map(([type, limit]) => <div key={type}>
+            <div><span>{LABELS[type]}</span><span>{workspace.usage[type].toLocaleString()} / {limit.toLocaleString()}</span></div>
+            <meter min={0} max={limit} value={Math.min(workspace.usage[type], limit)} aria-label={`${LABELS[type]} usage`} />
+          </div>)}</div>
+        </section>
+      </div>
+    </div>}
+    {view === 'team' && isAccountDialog && <div className="account-form-actions">
+      <button type="button" className="dialog-cancel" disabled={saving} onClick={() => onDismiss?.()}>Cancel</button>
+      <button type="button" className="dialog-create" disabled={saving || Boolean(inviteEmail)} onClick={() => save()}>{saving ? 'Saving...' : 'OK'}</button>
+    </div>}
+    {view === 'billing' && isAccountDialog && <div className="account-form-actions">
+      <button type="button" className="dialog-create" onClick={() => onDismiss?.()}>Close</button>
+    </div>}
   </main>
+
+  return isAccountDialog
+    ? <div
+        className="dialog-overlay account-dialog-overlay"
+        role="presentation"
+        onClick={() => onDismiss?.()}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onDismiss?.()
+          }
+        }}
+      >{content}</div>
+    : content
 }

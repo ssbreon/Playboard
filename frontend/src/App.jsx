@@ -1,7 +1,7 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { BookOpen, Check, ClipboardList, Copy, CreditCard, FolderOpen, Printer, Route, ScanSearch, Settings, Trash2, UserRound, Users } from 'lucide-react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { BookOpen, Check, ClipboardList, Copy, CreditCard, FolderOpen, LogOut, Printer, Route, Save, ScanSearch, Settings, Trash2, UserRound, Users } from 'lucide-react'
 import { api } from './api'
-import { createApi } from './api/client'
+import { createApi, isDevelopmentAuth, isSignedOut, signIn, signOut } from './api/client'
 import { AccountViews } from './components/AccountViews'
 import { renderCategoryBadge } from './components/CategoryBadge'
 import { DataGrid } from './components/DataGrid'
@@ -48,7 +48,7 @@ function timezoneColumns(columns, timezone) {
   return columns.map((column) => column.render === formatDate ? { ...column, render: (value) => formatDate(value, timezone) } : column)
 }
 
-function AppBar({ activeView, onNavigate, user, workspace, onWorkspaceChange, busy }) {
+function AppBar({ activeView, onNavigate, user, workspace, onWorkspaceChange, onSignOut, busy }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -109,7 +109,10 @@ function AppBar({ activeView, onNavigate, user, workspace, onWorkspaceChange, bu
         )}
       </nav>
       {user && <div className="app-bar-account" ref={menuRef} onKeyDown={menuKeys}>
-        {workspace && <span className="active-workspace-label">{workspace.name}<small>{workspace.subscription.source === 'development_fixture' ? 'Local mock' : workspace.subscription.status}</small></span>}
+        <div className="app-bar-identity">
+          <span className="app-bar-user-name" title={user.name}>{user.name}</span>
+          {workspace && <span className="active-workspace-label"><span className="app-bar-workspace-name" title={workspace.name}>{workspace.name}</span></span>}
+        </div>
         <button
           type="button"
           className="account-button"
@@ -123,20 +126,24 @@ function AppBar({ activeView, onNavigate, user, workspace, onWorkspaceChange, bu
         </button>
         {menuOpen && (
           <div className="account-menu" role="menu">
-            <div className="account-menu-identity">
-              <strong>{user.name}</strong>
-              <span>{workspace?.role || user.roles.join(', ')}</span>
+            <div className="account-menu-panes">
+              <div className="account-menu-subscriptions" role="group" aria-label="Subscriptions">
+                <div className="account-menu-section-label">Subscriptions</div>
+                {user.workspaces?.map((item) => <button key={item.id} type="button" role="menuitemradio" aria-checked={workspace?.id === item.id} disabled={busy} onClick={() => { setMenuOpen(false); onWorkspaceChange(item.id) }}>
+                  {item.kind === 'team' ? <Users className="menu-item-icon" aria-hidden="true" /> : <UserRound className="menu-item-icon" aria-hidden="true" />}
+                  <span className="workspace-menu-name">{item.name}</span>{workspace?.id === item.id && <Check size={16} aria-hidden="true" />}
+                </button>)}
+              </div>
+              <div className="account-menu-actions" role="group" aria-label="Account">
+                <div className="account-menu-section-label">{user.name} (<span className="account-role">{workspace?.role || user.roles.join(', ')}</span>)</div>
+                <button type="button" role="menuitem" disabled={busy} onClick={(event) => navigate(event, 'profile')}><UserRound className="menu-item-icon" aria-hidden="true" />Profile</button>
+                <button type="button" role="menuitem" disabled={busy} onClick={(event) => navigate(event, 'settings')}><Settings className="menu-item-icon" aria-hidden="true" />Settings</button>
+                {workspace?.kind === 'team' && <button type="button" role="menuitem" disabled={busy} onClick={(event) => navigate(event, 'team')}><Users className="menu-item-icon" aria-hidden="true" />Team</button>}
+                <button type="button" role="menuitem" disabled={busy} onClick={(event) => navigate(event, 'billing')}><CreditCard className="menu-item-icon" aria-hidden="true" />Membership &amp; Billing</button>
+                <div className="account-menu-divider" role="separator" />
+                <button type="button" role="menuitem" disabled={busy} onClick={() => { setMenuOpen(false); onSignOut() }}><LogOut className="menu-item-icon" aria-hidden="true" />Sign Out</button>
+              </div>
             </div>
-            <div className="account-menu-section-label">Subscriptions</div>
-            {user.workspaces?.map((item) => <button key={item.id} type="button" role="menuitemradio" aria-checked={workspace?.id === item.id} disabled={busy} onClick={() => { setMenuOpen(false); onWorkspaceChange(item.id) }}>
-              {item.kind === 'team' ? <Users className="menu-item-icon" aria-hidden="true" /> : <UserRound className="menu-item-icon" aria-hidden="true" />}
-              <span className="workspace-menu-name">{item.name}</span>{workspace?.id === item.id && <Check size={16} aria-hidden="true" />}
-            </button>)}
-            <div className="account-menu-divider" />
-            <a href="#profile" role="menuitem" onClick={(event) => navigate(event, 'profile')}><UserRound className="menu-item-icon" aria-hidden="true" />Profile</a>
-            <a href="#settings" role="menuitem" onClick={(event) => navigate(event, 'settings')}><Settings className="menu-item-icon" aria-hidden="true" />Settings</a>
-            {workspace?.kind === 'team' && <a href="#team" role="menuitem" onClick={(event) => navigate(event, 'team')}><Users className="menu-item-icon" aria-hidden="true" />Team</a>}
-            <a href="#billing" role="menuitem" onClick={(event) => navigate(event, 'billing')}><CreditCard className="menu-item-icon" aria-hidden="true" />Membership &amp; Billing</a>
           </div>
         )}
       </div>}
@@ -268,7 +275,7 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
       {settingsOpen && (
         <div className="dialog-overlay" onClick={() => setSettingsOpen(false)}>
           <form className="dialog-panel" onClick={(event) => event.stopPropagation()} onSubmit={handleSettingsSave}>
-            <h2>{parentLabel} Settings</h2>
+            <h2><Settings size={26} strokeWidth={1.8} aria-hidden="true" />{parentLabel} Settings</h2>
             <label className="dialog-field">
               <span>Category</span>
               <select value={draftCategory} onChange={(event) => setDraftCategory(event.target.value)}>
@@ -329,8 +336,9 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
   )
 }
 
-function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdated, onWorkspaceUpdated, onGuardChange, requestLeave, busy }) {
+function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdated, onWorkspaceUpdated, onGuardChange, onSignOut, requestLeave, busy }) {
   const [view, setView] = useState('playbooks')
+  const [accountDialog, setAccountDialog] = useState(null)
   const [parent, setParent] = useState(null)
   const [designer, setDesigner] = useState(null)
   const [newDialog, setNewDialog] = useState(null)
@@ -344,6 +352,8 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
 
   const writable = workspace.capabilities.edit
   const defaults = { ...workspace.defaults, ...authUser.preferences }
+  const fetchPlaybooks = useCallback(({ namePrefix }) => api.listPlaybooks(undefined, namePrefix).then((result) => result.items), [api])
+  const fetchGamePlans = useCallback(({ namePrefix }) => api.listGamePlans(undefined, namePrefix).then((result) => result.items), [api])
 
   async function handleCreateCollection(payload) {
     if (newCollection === 'playbook') {
@@ -518,11 +528,20 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
         workspace={workspace}
         busy={busy}
         onWorkspaceChange={onWorkspaceChange}
+        onSignOut={onSignOut}
         onNavigate={(nextView) => requestLeave(() => {
-          setDesigner(null)
-          setParent(null)
-          setView(nextView)
-        }, 'Leave this view')}
+          if (['settings', 'profile', 'billing', 'team'].includes(nextView)) {
+            setDesigner(null)
+            setParent(null)
+            if (['profile', 'team', 'billing'].includes(view)) setView('playbooks')
+            setAccountDialog(nextView)
+          } else {
+            setAccountDialog(null)
+            setDesigner(null)
+            setParent(null)
+            setView(nextView)
+          }
+        }, ['settings', 'profile', 'billing'].includes(nextView) ? `Open ${nextView}` : 'Leave this view')}
       />
 
       {!writable && <div className="workspace-read-only" role="status">{workspace.name}: read-only</div>}
@@ -617,7 +636,7 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
           rowIcon={BookOpen}
           rowType="Playbook"
           categoryOptions={COLLECTION_CATEGORIES}
-          fetchRows={({ namePrefix }) => api.listPlaybooks(undefined, namePrefix).then((result) => result.items)}
+          fetchRows={fetchPlaybooks}
           onNew={writable && workspace.usage.playbooks < workspace.limits.playbooks ? () => setNewCollection('playbook') : undefined}
           newLabel="New Playbook"
           rowActions={collectionRowActions('playbook')}
@@ -633,7 +652,7 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
           rowIcon={ClipboardList}
           rowType="Game Plan"
           categoryOptions={COLLECTION_CATEGORIES}
-          fetchRows={({ namePrefix }) => api.listGamePlans(undefined, namePrefix).then((result) => result.items)}
+          fetchRows={fetchGamePlans}
           onNew={writable && workspace.usage.gamePlans < workspace.limits.gamePlans ? () => setNewCollection('gamePlan') : undefined}
           newLabel="New Game Plan"
           rowActions={collectionRowActions('gamePlan')}
@@ -641,14 +660,26 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
         />
       )}
 
-      {['profile', 'settings', 'team', 'billing'].includes(view) && <AccountViews key={view} view={view} user={authUser} workspace={workspace} api={api} onUserUpdated={onUserUpdated} onWorkspaceUpdated={onWorkspaceUpdated} onGuardChange={onGuardChange} />}
         </>
       )}
+      {accountDialog && <AccountViews
+        key={accountDialog}
+        view={accountDialog}
+        user={authUser}
+        workspace={workspace}
+        api={api}
+        onUserUpdated={onUserUpdated}
+        onWorkspaceUpdated={onWorkspaceUpdated}
+        onGuardChange={onGuardChange}
+        onDismiss={() => requestLeave(() => setAccountDialog(null), `Close ${accountDialog}`)}
+        onSaved={() => setAccountDialog(null)}
+      />}
     </>
   )
 }
 
 function App() {
+  const [signedOut, setSignedOut] = useState(isSignedOut)
   const [user, setUser] = useState(null)
   const [entry, setEntry] = useState(null)
   const [error, setError] = useState(null)
@@ -703,6 +734,7 @@ function App() {
   }
 
   useEffect(() => {
+    if (signedOut) return
     let active = true
     api.me().then((identity) => {
       if (!active) return
@@ -714,7 +746,31 @@ function App() {
       return loadWorkspace(workspace.id)
     }).catch((failure) => { if (active) { setError(failure.message); setLoading(false) } })
     return () => { active = false; generation.current += 1 }
-  }, [])
+  }, [signedOut])
+
+  function handleSignOut() {
+    requestLeave(() => {
+      signOut()
+      generation.current += 1
+      entryRef.current = null
+      guard.current = null
+      setEntry(null)
+      setUser(null)
+      setError(null)
+      setLeave(null)
+      setInviteToken(null)
+      setLoading(false)
+      setSignedOut(true)
+      history.replaceState(null, '', location.pathname + location.search)
+    }, 'Sign Out')
+  }
+
+  function handleSignIn() {
+    signIn()
+    setError(null)
+    setLoading(true)
+    setSignedOut(false)
+  }
 
   function requestLeave(action, title) {
     if (pending.current || savingLeave || loading) return
@@ -788,17 +844,18 @@ function App() {
   }
 
   return <>
-    {inviteToken && user ? <><AppBar user={null} /><main className="account-view"><div className="account-view-heading"><Users size={24} /><h1>Team Invitation</h1></div>
+    {signedOut ? <><AppBar user={null} /><main className="auth-state"><h1>Signed out</h1>{isDevelopmentAuth && <button type="button" className="dialog-create" onClick={handleSignIn}>Sign In</button>}</main></> : inviteToken && user ? <><AppBar user={null} /><main className="account-view"><div className="account-view-heading"><Users size={24} /><h1>Team Invitation</h1></div>
       <div className="account-section"><p>{user.email || user.name}</p><div className="account-form-actions"><button type="button" className="dialog-cancel" disabled={savingLeave} onClick={() => { setInviteToken(null); history.replaceState(null, '', location.pathname + location.search) }}>Cancel</button><button type="button" className="dialog-create" disabled={savingLeave} onClick={acceptInvite}>{savingLeave ? 'Accepting...' : 'Accept Invitation'}</button></div></div>
     </main></> : entry && user ? <WorkspaceApp key={entry.workspace.id} authUser={user} workspace={entry.workspace} api={entry.api}
       onWorkspaceChange={(id) => { if (id !== entry.workspace.id) requestLeave(() => loadWorkspace(id), 'Switch subscription') }}
       onUserUpdated={setUser} onWorkspaceUpdated={updateWorkspace} onGuardChange={(value) => { guard.current = value }}
+      onSignOut={handleSignOut}
       requestLeave={requestLeave} busy={loading || mutations > 0 || savingLeave} />
       : <><AppBar user={null} /><main className="auth-state"><h1>{error ? 'Unable to sign in' : 'Signing in...'}</h1></main></>}
     {loading && entry && <div className="workspace-loading" role="status">Switching subscription...</div>}
     {error && <p className="account-error" role="alert">{error}</p>}
-    {leave && <div className="dialog-overlay"><section className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="leave-title">
-      <h2 id="leave-title">{leave.title}</h2><p>Save your changes before leaving?</p>
+    {leave && <div className="dialog-overlay leave-confirmation-overlay"><section className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="leave-title">
+      <h2 id="leave-title"><Save size={22} aria-hidden="true" />{leave.title}</h2><p>Save your changes before leaving?</p>
       <div className="dialog-actions">
         <button type="button" className="dialog-cancel" disabled={savingLeave} autoFocus onClick={() => setLeave(null)}>Cancel</button>
         <button type="button" className="dialog-cancel" disabled={savingLeave} onClick={() => { setLeave(null); leave.action() }}>Discard</button>
