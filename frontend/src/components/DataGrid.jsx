@@ -209,7 +209,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
           </button>
         </div>
       )}
-      {isLoading && <p className="data-grid-status">Loading {title.toLowerCase()}...</p>}
+      {isLoading && <p className="data-grid-status data-grid-loading" role="status">Loading {title.toLowerCase()}...</p>}
       {error && <p className="data-grid-status data-grid-error">Unable to load {title.toLowerCase()}: {error}</p>}
       {!isLoading && !error && (
         <>

@@ -26,11 +26,13 @@ button:active:not(:disabled):not([role^='menuitem']) {
   --app-bar-foreground: #f3f4f6;
   --app-bar-state-background: rgba(255, 255, 255, 0.12);
 
+  position: relative;
   display: flex;
   align-items: center;
   gap: 24px;
   padding: 10px 32px;
   background: var(--navy);
+  border-bottom: 1px solid black;
 
   @media (max-width: 1024px) {
     padding: 12px 20px;
@@ -1557,7 +1559,6 @@ button:active:not(:disabled):not([role^='menuitem']) {
 }
 
 .app-bar-account {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1574,7 +1575,8 @@ button:active:not(:disabled):not([role^='menuitem']) {
   opacity: 0.65;
 }
 
-.app-bar-subscription-status > svg {
+.app-bar-subscription-status > svg,
+.account-title-loading > svg {
   animation: subscription-spin 1s linear infinite;
 }
 
@@ -1583,7 +1585,8 @@ button:active:not(:disabled):not([role^='menuitem']) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-bar-subscription-status > svg { animation: none; }
+  .app-bar-subscription-status > svg,
+  .account-title-loading > svg { animation: none; }
 }
 
 .app-bar-identity {
@@ -1634,11 +1637,13 @@ button:active:not(:disabled):not([role^='menuitem']) {
 
 .account-menu {
   position: absolute;
-  top: calc(100% + 8px);
+  top: 100%;
   right: 0;
   display: flex;
   flex-direction: column;
-  width: min(440px, calc(100vw - 32px));
+  width: max-content;
+  min-width: min(440px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
   box-sizing: border-box;
   overflow: hidden;
   padding: 0;
@@ -1647,6 +1652,7 @@ button:active:not(:disabled):not([role^='menuitem']) {
   background: var(--context-menu-bg);
   box-shadow: var(--shadow);
   z-index: 10;
+  border-right-color: black;
 
   a,
   button[role='menuitem'],
@@ -1667,7 +1673,7 @@ button:active:not(:disabled):not([role^='menuitem']) {
     box-shadow: none;
     font-family: inherit;
     cursor: pointer;
-    white-space: normal;
+    white-space: nowrap;
 
     &:hover,
     &:focus-visible {
@@ -1685,7 +1691,7 @@ button:active:not(:disabled):not([role^='menuitem']) {
 
 .account-menu-panes {
   display: grid;
-  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  grid-template-columns: max-content max-content;
 }
 
 .account-menu-subscriptions,
@@ -1724,7 +1730,13 @@ button:active:not(:disabled):not([role^='menuitem']) {
 .workspace-menu-name {
   flex: 1;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu button[role='menuitemradio'] > svg {
+  flex-shrink: 0;
 }
 
 .account-menu-section-label {
@@ -1775,6 +1787,16 @@ button:active:not(:disabled):not([role^='menuitem']) {
 .account-team-dialog {
   flex: 0 1 680px;
   width: min(680px, calc(100vw - 32px));
+}
+
+.account-title-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  height: 18px;
+  margin-left: auto;
+  opacity: 0.7;
 }
 
 .account-view-heading {
@@ -2194,6 +2216,11 @@ button:active:not(:disabled):not([role^='menuitem']) {
   .app-bar-identity { max-width: 100px; }
   .app-bar-user-name { font-size: 12px; }
   .active-workspace-label { display: none; }
+  .account-menu-panes { grid-template-columns: minmax(0, 1fr); }
+  .account-menu-subscriptions {
+    border-right: 0;
+    border-bottom: 1px solid var(--context-menu-border);
+  }
   .account-menu a,
   .account-menu button[role^='menuitem'] { padding: 8px; font-size: 13px; }
   .account-menu-section-label { padding: 6px 8px; }
@@ -2377,6 +2404,13 @@ button:active:not(:disabled):not([role^='menuitem']) {
 
 .data-grid-status {
   color: var(--text);
+}
+
+.data-grid-loading {
+  flex: 1;
+  padding: 16px;
+  background: gray;
+  color: #fff;
 }
 
 .data-grid-toolbar {

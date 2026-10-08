@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Copy, CreditCard, Mail, Save, Trash2, Users, UserRound, Settings } from 'lucide-react'
+import { Copy, CreditCard, LoaderCircle, Mail, Save, Trash2, Users, UserRound, Settings } from 'lucide-react'
 import { DataGrid } from './DataGrid'
 import { PLAY_THEMES } from '../utils/themes'
 
@@ -184,7 +184,12 @@ export function AccountViews({ view, user, workspace, api, onUserUpdated, onWork
     onClick={isAccountDialog ? (event) => event.stopPropagation() : undefined}
   >
     {isAccountDialog
-      ? <h2 id="account-view-title"><HeadingIcon size={26} strokeWidth={1.8} aria-hidden="true" />{TITLES[view]}</h2>
+      ? <h2 id="account-view-title" aria-label={TITLES[view]}>
+          <HeadingIcon size={26} strokeWidth={1.8} aria-hidden="true" />{TITLES[view]}
+          {['team', 'billing'].includes(view) && <span className="account-title-loading" role="status" title={loading ? `Loading ${TITLES[view].toLowerCase()}...` : undefined}>
+            {loading && <><LoaderCircle size={18} aria-hidden="true" /><span className="sr-only">Loading {TITLES[view].toLowerCase()}...</span></>}
+          </span>}
+        </h2>
       : <header className="account-view-heading"><HeadingIcon size={24} aria-hidden="true" /><h1 id="account-view-title">{TITLES[view]}</h1></header>}
     {isAccountDialog
       ? <dl className="account-view-context account-dialog-context">
@@ -194,7 +199,6 @@ export function AccountViews({ view, user, workspace, api, onUserUpdated, onWork
       : <div className="account-view-context"><span>{workspace.name}</span><span className="account-role">{workspace.role}</span></div>}
     {error && <p className="account-error" role="alert">{error}</p>}
     {notice && <p className="account-notice" role="status">{notice}</p>}
-    {loading && <p role="status">Loading...</p>}
 
     {['profile', 'settings'].includes(view) && <form className="account-form" onSubmit={save}>
       <fieldset disabled={saving}>
