@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
-import { BookOpen, Check, ClipboardList, Copy, CreditCard, FolderOpen, LogOut, Printer, Route, Save, ScanSearch, Settings, Trash2, UserRound, Users } from 'lucide-react'
+import { BookOpen, Check, ClipboardList, Copy, CreditCard, FolderOpen, LoaderCircle, LogOut, Printer, Route, Save, ScanSearch, Settings, Trash2, UserRound, Users } from 'lucide-react'
 import { api } from './api'
 import { createApi, isDevelopmentAuth, isSignedOut, signIn, signOut } from './api/client'
 import { AccountViews } from './components/AccountViews'
@@ -48,7 +48,7 @@ function timezoneColumns(columns, timezone) {
   return columns.map((column) => column.render === formatDate ? { ...column, render: (value) => formatDate(value, timezone) } : column)
 }
 
-function AppBar({ activeView, onNavigate, user, workspace, onWorkspaceChange, onSignOut, busy }) {
+function AppBar({ activeView, onNavigate, user, workspace, onWorkspaceChange, onSignOut, busy, switchingSubscription }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -113,6 +113,9 @@ function AppBar({ activeView, onNavigate, user, workspace, onWorkspaceChange, on
           <span className="app-bar-user-name" title={user.name}>{user.name}</span>
           {workspace && <span className="active-workspace-label"><span className="app-bar-workspace-name" title={workspace.name}>{workspace.name}</span></span>}
         </div>
+        <span className="app-bar-subscription-status" role="status" title={switchingSubscription ? 'Switching subscription...' : undefined}>
+          {switchingSubscription && <><LoaderCircle size={14} aria-hidden="true" /><span className="sr-only">Switching subscription...</span></>}
+        </span>
         <button
           type="button"
           className="account-button"
@@ -336,7 +339,7 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
   )
 }
 
-function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdated, onWorkspaceUpdated, onGuardChange, onSignOut, requestLeave, busy }) {
+function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdated, onWorkspaceUpdated, onGuardChange, onSignOut, requestLeave, busy, switchingSubscription }) {
   const [view, setView] = useState('playbooks')
   const [accountDialog, setAccountDialog] = useState(null)
   const [parent, setParent] = useState(null)
@@ -527,6 +530,7 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
         user={authUser}
         workspace={workspace}
         busy={busy}
+        switchingSubscription={switchingSubscription}
         onWorkspaceChange={onWorkspaceChange}
         onSignOut={onSignOut}
         onNavigate={(nextView) => requestLeave(() => {
@@ -850,9 +854,8 @@ function App() {
       onWorkspaceChange={(id) => { if (id !== entry.workspace.id) requestLeave(() => loadWorkspace(id), 'Switch subscription') }}
       onUserUpdated={setUser} onWorkspaceUpdated={updateWorkspace} onGuardChange={(value) => { guard.current = value }}
       onSignOut={handleSignOut}
-      requestLeave={requestLeave} busy={loading || mutations > 0 || savingLeave} />
+      requestLeave={requestLeave} busy={loading || mutations > 0 || savingLeave} switchingSubscription={loading} />
       : <><AppBar user={null} /><main className="auth-state"><h1>{error ? 'Unable to sign in' : 'Signing in...'}</h1></main></>}
-    {loading && entry && <div className="workspace-loading" role="status">Switching subscription...</div>}
     {error && <p className="account-error" role="alert">{error}</p>}
     {leave && <div className="dialog-overlay leave-confirmation-overlay"><section className="dialog-panel" role="dialog" aria-modal="true" aria-labelledby="leave-title">
       <h2 id="leave-title"><Save size={22} aria-hidden="true" />{leave.title}</h2><p>Save your changes before leaving?</p>

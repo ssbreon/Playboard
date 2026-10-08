@@ -1564,6 +1564,28 @@ button:active:not(:disabled):not([role^='menuitem']) {
   min-width: 0;
 }
 
+.app-bar-subscription-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  height: 14px;
+  color: var(--app-bar-foreground);
+  opacity: 0.65;
+}
+
+.app-bar-subscription-status > svg {
+  animation: subscription-spin 1s linear infinite;
+}
+
+@keyframes subscription-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-bar-subscription-status > svg { animation: none; }
+}
+
 .app-bar-identity {
   display: flex;
   align-items: center;
@@ -2124,8 +2146,7 @@ button:active:not(:disabled):not([role^='menuitem']) {
 
 .account-error,
 .account-notice,
-.workspace-read-only,
-.workspace-loading {
+.workspace-read-only {
   padding: 12px 16px;
   font-size: 14px;
 }
@@ -2140,8 +2161,7 @@ button:active:not(:disabled):not([role^='menuitem']) {
   background: #eaf8ee;
 }
 
-.workspace-read-only,
-.workspace-loading {
+.workspace-read-only {
   background: var(--code-bg);
   color: var(--text-h);
 }
