@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { getTheme } from '../utils/themes'
 import {
   DEFAULT_PLAY_PERSPECTIVE,
@@ -33,15 +33,18 @@ import {
 
 /** Read-only rendering of a play's field, markers, drawings and text. Used for print output. */
 export function PlayFieldView({ play, className = '' }) {
+  const drawingMaskId = useId()
   const fieldRef = useRef(null)
-  const [fieldPxSize, setFieldPxSize] = useState({ width: 100, height: 100 })
+  const [fieldPxSize, setFieldPxSize] = useState({ width: 100, height: 100, markerRadius: 14 })
 
   useEffect(() => {
     const el = fieldRef.current
     if (!el) return
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect
-      if (width > 0 && height > 0) setFieldPxSize({ width, height })
+      const marker = el.querySelector('.play-designer-marker')
+      const markerRadius = marker ? parseFloat(getComputedStyle(marker).width) / 2 : 14
+      if (width > 0 && height > 0) setFieldPxSize({ width, height, markerRadius })
     })
     observer.observe(el)
     return () => observer.disconnect()
@@ -149,11 +152,23 @@ export function PlayFieldView({ play, className = '' }) {
           const tool = DRAWING_TOOLS.find((t) => t.id === drawing.type)
           const color = drawing.color || toolColor(tool, theme)
           const renderedPoints = tool.id === 'motion' ? motionPathPoints(points, fieldPxSize) : points
+          const playerStart = drawing.anchorId && !drawing.blockId && !drawing.motionId && !drawing.origin
+            ? fixedSizeEllipse(points[0], fieldPxSize, fieldPxSize.markerRadius)
+            : null
+          const maskId = `${drawingMaskId}-${drawing.id}`
           const cap = tool.endCap === 'tbar' ? tbarCapPoints(points, fieldPxSize) : null
           const arrow = tool.arrow ? arrowCapPoints(points, fieldPxSize) : null
           const motionCap = tool.id === 'motion' ? fixedSizeEllipse(points.at(-1), fieldPxSize, 3.5) : null
           return (
-            <g key={drawing.id}>
+            <g key={drawing.id} mask={playerStart ? `url(#${maskId})` : undefined}>
+              {playerStart && (
+                <defs>
+                  <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100" style={{ maskType: 'luminance' }}>
+                    <rect width="100" height="100" fill="white" />
+                    <ellipse {...playerStart} fill="black" />
+                  </mask>
+                </defs>
+              )}
               <path
                 className="play-designer-route"
                 d={pathData(tool.id === 'blitz' ? renderedPoints.slice(0, 2) : renderedPoints)}

@@ -82,6 +82,22 @@ class AuthenticationTests(unittest.TestCase):
         })
         return team
 
+    def test_staff_members_include_coaching_titles(self):
+        team = self.team_fixture()
+        updated = call_api("PATCH", "me", "coach-b", {"coachingTitle": "Defensive Coordinator"})
+        self.assertEqual(updated.status_code, 200)
+        response = call_api("GET", "workspace/members", "local-coach", workspace_id=team["id"])
+        self.assertEqual(response.status_code, 200)
+        members = {member["userId"]: member for member in response_json(response)["items"]}
+        self.assertEqual(members["coach-b"]["coachingTitle"], "Defensive Coordinator")
+        self.assertEqual(members["local-coach"]["coachingTitle"], "")
+        profile = function_app.storage.get("profiles", "coach-b")
+        profile.pop("coachingTitle")
+        function_app.storage.save("profiles", profile)
+        response = call_api("GET", "workspace/members", "local-coach", workspace_id=team["id"])
+        members = {member["userId"]: member for member in response_json(response)["items"]}
+        self.assertEqual(members["coach-b"]["coachingTitle"], "")
+
     def test_coach_edits_shared_content_but_cannot_delete(self):
         team = self.team_fixture()
         created = response_json(call_api("POST", "playbooks", "local-coach", {"name": "Team"}, team["id"]))
@@ -342,8 +358,37 @@ class AuthenticationTests(unittest.TestCase):
 
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(created["ownerId"], "coach-a")
+        self.assertEqual(response_json(call_api("GET", "playbooks", "coach-a"))["items"][0]["ownerName"], "coach-a")
         self.assertEqual(response_json(call_api("GET", "playbooks", "coach-b"))["items"], [])
         self.assertEqual(call_api("GET", f"playbooks/{created['id']}", "coach-b").status_code, 403)
+
+    def test_play_and_scout_play_lists_include_owner_name(self):
+        call_api("GET", "me", "local-coach")
+        playbook = response_json(call_api("POST", "playbooks", "local-coach", {"name": "Book"}))
+        game_plan = response_json(call_api("POST", "game-plans", "local-coach", {"name": "Plan"}))
+        play_path = f"playbooks/{playbook['id']}/plays"
+        scout_play_path = f"game-plans/{game_plan['id']}/scout-plays"
+        call_api("POST", play_path, "local-coach", {"name": "Play"})
+        call_api("POST", scout_play_path, "local-coach", {"name": "Scout play"})
+
+        self.assertEqual(response_json(call_api("GET", play_path, "local-coach"))["items"][0]["ownerName"], "Local Coach")
+        self.assertEqual(response_json(call_api("GET", scout_play_path, "local-coach"))["items"][0]["ownerName"], "Local Coach")
+
+    def test_plays_and_scout_plays_are_paged_and_reorderable(self):
+        playbook = response_json(call_api("POST", "playbooks", "coach-a", {"name": "Book"}))
+        game_plan = response_json(call_api("POST", "game-plans", "coach-a", {"name": "Plan"}))
+        for path in (f"playbooks/{playbook['id']}/plays", f"game-plans/{game_plan['id']}/scout-plays"):
+            ids = [response_json(call_api("POST", path, "coach-a", {"name": name, "page": 99}))["id"] for name in ("A", "B", "C")]
+            pages = lambda: [(item["name"], item["page"]) for item in response_json(call_api("GET", path, "coach-a"))["items"]]
+            self.assertEqual(pages(), [("A", 1), ("B", 2), ("C", 3)])
+
+            self.assertEqual(call_api("POST", f"{path}/reorder", "coach-a", {"ids": ids[:2]}).status_code, 400)
+            self.assertEqual(call_api("POST", f"{path}/reorder", "coach-a", {"ids": [ids[2], ids[0], ids[1]]}).status_code, 200)
+            self.assertEqual(pages(), [("C", 1), ("A", 2), ("B", 3)])
+
+            call_api("PATCH", f"{path}/{ids[1]}", "coach-a", {"page": 1})
+            call_api("DELETE", f"{path}/{ids[2]}", "coach-a")
+            self.assertEqual(pages(), [("A", 1), ("B", 2)])
 
     def test_slides_are_scoped_to_their_play(self):
         playbook = response_json(call_api("POST", "playbooks", "coach-a", {"name": "Defense"}))

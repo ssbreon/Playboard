@@ -240,8 +240,49 @@ def with_child_count(record, entity_type, owner_id):
     return record
 
 
+def with_owner_name(record):
+    profile = storage.get("profiles", record.get("ownerId")) or {}
+    return {**record, "ownerName": profile.get("name") or record.get("ownerId", "")}
+
+
+PAGED_TYPES = {"plays", "scoutPlays"}
+
+
+def paged_siblings(entity_type, parent_id):
+    records = storage.list(entity_type, parent_id, workspace_id=request_workspace.get()["id"])
+    records.sort(key=lambda record: (not isinstance(record.get("page"), int), record.get("page") or 0, record.get("createdAt") or ""))
+    return records
+
+
+def renumber_pages(entity_type, records):
+    for index, record in enumerate(records, start=1):
+        if record.get("page") != index:
+            record["page"] = index
+            storage.save(entity_type, record)
+    return records
+
+
+def list_paged(entity_type, parent_id, category, name_prefix):
+    records = renumber_pages(entity_type, paged_siblings(entity_type, parent_id))
+    return [with_owner_name(record) for record in records
+            if (category is None or record.get("category") == category)
+            and (not name_prefix or (record.get("name") or "").casefold().startswith(name_prefix.casefold()))]
+
+
+def reorder_pages(entity_type, parent_id, payload):
+    ids = payload.get("ids")
+    records = {record["id"]: record for record in paged_siblings(entity_type, parent_id)}
+    if not isinstance(ids, list) or len(ids) != len(records) or set(ids) != set(records):
+        return response({"error": {"code": "VALIDATION_ERROR", "message": "ids must list every item exactly once"}}, 400)
+    renumber_pages(entity_type, [records[item_id] for item_id in ids])
+    return response({"items": [{"id": item_id, "page": index} for index, item_id in enumerate(ids, start=1)]})
+
+
 def create_record(entity_type, payload, owner_id, parent_id=None):
     payload = {key: value for key, value in payload.items() if key not in {"_etag", "_rid", "_self", "_ts", "_attachments"}}
+    if entity_type in PAGED_TYPES:
+        siblings = renumber_pages(entity_type, paged_siblings(entity_type, parent_id))
+        payload["page"] = len(siblings) + 1
     workspace = request_workspace.get()
     if workspace and entity_type in accounts.LIMITS:
         storage.adjust_usage(workspace, entity_type, 1)
@@ -259,7 +300,7 @@ def update_record(entity_type, item_id, payload):
     record = storage.get(entity_type, item_id)
     if record is None:
         return None
-    immutable_fields = {"id", "ownerId", "workspaceId", "createdBy", "parentId", "entityType", "partitionKey", "createdAt", "_etag", "_rid", "_self", "_ts", "_attachments"}
+    immutable_fields = {"id", "ownerId", "workspaceId", "createdBy", "parentId", "entityType", "partitionKey", "createdAt", "page", "_etag", "_rid", "_self", "_ts", "_attachments"}
     record.update({key: value for key, value in payload.items() if key not in immutable_fields})
     record["updatedAt"] = now()
     return response(storage.save(entity_type, record))
@@ -325,7 +366,7 @@ def dispatch(req, user, workspace, role):
     if path == ["playbooks"]:
         if method == "GET":
             records = storage.list("playbooks", category=req.params.get("category"), name_prefix=req.params.get("namePrefix"), owner_id=owner_id)
-            return response({"items": [with_child_count(record, "plays", owner_id) for record in records]})
+            return response({"items": [with_owner_name(with_child_count(record, "plays", owner_id)) for record in records]})
         if method == "POST":
             payload = body(req)
             if not payload.get("name"):
@@ -335,7 +376,7 @@ def dispatch(req, user, workspace, role):
     if path == ["game-plans"]:
         if method == "GET":
             records = storage.list("gamePlans", category=req.params.get("category"), name_prefix=req.params.get("namePrefix"), owner_id=owner_id)
-            return response({"items": [with_child_count(record, "scoutPlays", owner_id) for record in records]})
+            return response({"items": [with_owner_name(with_child_count(record, "scoutPlays", owner_id)) for record in records]})
         if method == "POST":
             payload = body(req)
             if not payload.get("name"):
@@ -361,11 +402,12 @@ def dispatch(req, user, workspace, role):
         if len(path) >= 3 and path[2] == "scout-plays":
             entity_type = "scoutPlays"
             if len(path) == 3:
-                records = storage.list(entity_type, game_plan_id, req.params.get("category"), req.params.get("namePrefix"), owner_id)
                 if method == "GET":
-                    return response({"items": records})
+                    return response({"items": list_paged(entity_type, game_plan_id, req.params.get("category"), req.params.get("namePrefix"))})
                 if method == "POST":
                     return create_record(entity_type, body(req), owner_id, game_plan_id)
+            if len(path) == 4 and path[3] == "reorder" and method == "POST":
+                return reorder_pages(entity_type, game_plan_id, body(req))
             if len(path) == 4:
                 item_id = path[3]
                 record = storage.get(entity_type, item_id)
@@ -377,6 +419,7 @@ def dispatch(req, user, workspace, role):
                     return update_record(entity_type, item_id, body(req))
                 if method == "DELETE":
                     storage.delete(entity_type, item_id)
+                    renumber_pages(entity_type, paged_siblings(entity_type, game_plan_id))
                     return func.HttpResponse(status_code=204)
 
     if len(path) >= 2 and path[0] == "playbooks":
@@ -397,13 +440,13 @@ def dispatch(req, user, workspace, role):
 
         if len(path) >= 3 and path[2] == "plays":
             if len(path) == 3:
-                records = storage.list(
-                    "plays", playbook_id, req.params.get("category"), req.params.get("namePrefix"), owner_id
-                )
                 if method == "GET":
-                    return response({"items": records})
+                    return response({"items": list_paged("plays", playbook_id, req.params.get("category"), req.params.get("namePrefix"))})
                 if method == "POST":
                     return create_record("plays", body(req), owner_id, playbook_id)
+
+            if len(path) == 4 and path[3] == "reorder" and method == "POST":
+                return reorder_pages("plays", playbook_id, body(req))
 
             if len(path) >= 4:
                 play_id = path[3]
@@ -417,6 +460,7 @@ def dispatch(req, user, workspace, role):
                         return update_record("plays", play_id, body(req))
                     if method == "DELETE":
                         storage.delete_tree("plays", play_id)
+                        renumber_pages("plays", paged_siblings("plays", playbook_id))
                         return func.HttpResponse(status_code=204)
 
                 if len(path) >= 5 and path[4] == "slides":

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Info, MoreVertical, RefreshCw, Search, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, GripVertical, Info, MoreVertical, RefreshCw, Search, X } from 'lucide-react'
 import { getCategoryBadgeStyle } from './CategoryBadge'
 
 const PAGE_SIZE = 50
 
-export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, categoryOptions, fetchRows, onNew, newLabel = 'New', menuItems = [], rowActions, onRowDoubleClick, onBack, items, compact = false, busy = false, rowActionLabel }) {
+export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, categoryOptions, fetchRows, onNew, newLabel = 'New', menuItems = [], rowActions, onRowDoubleClick, onBack, items, compact = false, busy = false, rowActionLabel, showPage = false, onReorder }) {
   const openHintStorageKey = `blitzboard:data-grid-open-hint:${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
   const [fetchedRows, setRows] = useState([])
   const rows = items ?? fetchedRows
@@ -20,6 +20,10 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
   const [openRowMenuId, setOpenRowMenuId] = useState(null)
   const [rowMenuPosition, setRowMenuPosition] = useState(null)
   const [refreshToken, setRefreshToken] = useState(0)
+  const [dragId, setDragId] = useState(null)
+  const [dropTarget, setDropTarget] = useState(null)
+  const [reordering, setReordering] = useState(false)
+  const [reorderError, setReorderError] = useState(null)
   const [showOpenHint, setShowOpenHint] = useState(() => {
     try {
       return typeof window !== 'undefined' && window.localStorage.getItem(openHintStorageKey) !== 'dismissed'
@@ -107,6 +111,54 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages - 1)
   const pageRows = filteredRows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE)
+  // Page order is only meaningful against the full, unfiltered list.
+  const canReorder = Boolean(onReorder) && items === undefined && !busy && !reordering && !selectedCategories.length && !namePrefix && !searchName
+  const leadingColumns = (showPage ? 1 : 0) + (RowIcon ? 1 : 0)
+
+  async function moveRow(rowId, toIndex) {
+    const fromIndex = rows.findIndex((row) => row.id === rowId)
+    if (fromIndex < 0 || toIndex < 0 || toIndex >= rows.length || fromIndex === toIndex) return
+    const previous = rows
+    const next = [...rows]
+    const [moved] = next.splice(fromIndex, 1)
+    next.splice(toIndex, 0, moved)
+    setRows(next.map((row, index) => ({ ...row, page: index + 1 })))
+    setReordering(true)
+    setReorderError(null)
+    try {
+      await onReorder(next.map((row) => row.id))
+    } catch (err) {
+      setRows(previous)
+      setReorderError(err.message)
+    } finally {
+      setReordering(false)
+    }
+  }
+
+  function handleDrop(event, targetRow) {
+    event.preventDefault()
+    const sourceId = dragId
+    const after = dropTarget?.after
+    setDragId(null)
+    setDropTarget(null)
+    if (!sourceId || sourceId === targetRow.id) return
+    const fromIndex = rows.findIndex((row) => row.id === sourceId)
+    const insertAt = rows.findIndex((row) => row.id === targetRow.id) + (after ? 1 : 0)
+    moveRow(sourceId, fromIndex < insertAt ? insertAt - 1 : insertAt)
+  }
+
+  function rowMenuItems(row) {
+    const actions = rowActions ? rowActions(row) : []
+    if (!onReorder) return actions
+    const index = rows.findIndex((item) => item.id === row.id)
+    const moves = [
+      { key: 'move-up', label: 'Move Up', icon: ArrowUp, disabled: !canReorder || index <= 0, onClick: () => moveRow(row.id, index - 1) },
+      { key: 'move-down', label: 'Move Down', icon: ArrowDown, disabled: !canReorder || index >= rows.length - 1, onClick: () => moveRow(row.id, index + 1) },
+    ]
+    const destructiveIndex = actions.findIndex((item) => item.destructive)
+    const insertAt = destructiveIndex < 0 ? actions.length : destructiveIndex
+    return [...actions.slice(0, insertAt), ...moves, ...actions.slice(insertAt)]
+  }
 
   const dropdownItems = [{ label: 'Refresh', icon: RefreshCw, onClick: () => setRefreshToken((t) => t + 1) }, ...menuItems]
 
@@ -211,12 +263,14 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
       )}
       {isLoading && <p className="data-grid-status data-grid-loading" role="status">Loading {title.toLowerCase()}...</p>}
       {error && <p className="data-grid-status data-grid-error">Unable to load {title.toLowerCase()}: {error}</p>}
+      {reorderError && <p className="data-grid-status data-grid-error" role="alert">Unable to reorder {title.toLowerCase()}: {reorderError}</p>}
       {!isLoading && !error && (
         <>
           <div className="data-grid-table-wrap">
             <table className="data-grid-table">
               <thead>
                 <tr>
+                  {showPage && <th className="data-grid-page-header" scope="col">Page</th>}
                   {RowIcon && <th className="data-grid-type-header" scope="col" aria-label="Type" />}
                   {columns.map((column) => (
                     <th key={column.key}>{column.header}</th>
@@ -227,7 +281,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
               <tbody>
                 {pageRows.length === 0 && (
                   <tr>
-                    <td className="data-grid-empty" colSpan={columns.length + (RowIcon ? 1 : 0) + (rowActions ? 1 : 0)}>
+                    <td className="data-grid-empty" colSpan={columns.length + leadingColumns + (rowActions ? 1 : 0)}>
                       {namePrefix ? `No ${title.toLowerCase()} match your search` : selectedCategories.length ? `No ${title.toLowerCase()} in ${selectedCategories.join(', ')}` : `No ${title.toLowerCase()} yet`}
                     </td>
                   </tr>
@@ -240,7 +294,35 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                       dismissOpenHint()
                     } : undefined}
                     style={onRowDoubleClick ? { cursor: 'pointer' } : undefined}
+                    className={[
+                      dragId === row.id && 'is-dragging',
+                      dropTarget?.id === row.id && (dropTarget.after ? 'drop-after' : 'drop-before'),
+                    ].filter(Boolean).join(' ') || undefined}
+                    draggable={canReorder || undefined}
+                    onDragStart={canReorder ? (event) => {
+                      event.dataTransfer.effectAllowed = 'move'
+                      event.dataTransfer.setData('text/plain', row.id)
+                      setDragId(row.id)
+                    } : undefined}
+                    onDragOver={canReorder && dragId ? (event) => {
+                      event.preventDefault()
+                      event.dataTransfer.dropEffect = 'move'
+                      const rect = event.currentTarget.getBoundingClientRect()
+                      const after = event.clientY > rect.top + rect.height / 2
+                      if (dropTarget?.id !== row.id || dropTarget.after !== after) setDropTarget({ id: row.id, after })
+                    } : undefined}
+                    onDrop={canReorder && dragId ? (event) => handleDrop(event, row) : undefined}
+                    onDragEnd={canReorder ? () => {
+                      setDragId(null)
+                      setDropTarget(null)
+                    } : undefined}
                   >
+                    {showPage && (
+                      <td className="data-grid-page-cell" title={canReorder ? 'Drag to reorder' : undefined}>
+                        {canReorder && <GripVertical className="data-grid-page-grip" size={14} aria-hidden="true" />}
+                        {row.page}
+                      </td>
+                    )}
                     {RowIcon && (
                       <td className="data-grid-type-cell" aria-label={rowType} title={rowType}>
                         <RowIcon size={17} strokeWidth={2} aria-hidden="true" />
@@ -271,7 +353,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                               const rect = event.currentTarget.getBoundingClientRect()
                               rowMenuTriggerRef.current = event.currentTarget
                               rowMenuPortalTargetRef.current = event.currentTarget.closest('[role="dialog"]') || document.body
-                              const menuHeight = rowActions(row).length * 44 + 12
+                              const menuHeight = rowMenuItems(row).length * 44 + 12
                               const top = rect.bottom + 4 + menuHeight <= window.innerHeight
                                 ? rect.bottom + 4 : Math.max(8, rect.top - menuHeight - 4)
                               setRowMenuPosition({ top, right: Math.max(8, window.innerWidth - rect.right) })
@@ -307,7 +389,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                                   }
                                 }}
                               >
-                                {rowActions(row).map((item) => (
+                                {rowMenuItems(row).map((item) => (
                                   <button
                                     key={item.key}
                                     type="button"

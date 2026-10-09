@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Check, FlipHorizontal2, FlipVertical2, Pencil, Play, Plus, Printer, RotateCcw, Settings, Undo2, X } from 'lucide-react'
 import { api as defaultApi } from '../api'
 import { FIELD_DECORATIONS, FIELD_ORIENTATIONS, PLAY_CATEGORIES } from './NewPlayDialog'
@@ -103,6 +103,7 @@ function adjustmentDesign(slide, fallback) {
 }
 
 export function PlayDesigner({ record, onClose, api = defaultApi, readOnly = false, canDelete = true, onGuardChange }) {
+  const drawingMaskId = useId()
   const initialTemplateId = record.template || PLAY_TEMPLATES[0].id
   const initialCategory = record.category || PLAY_CATEGORIES[0]
   const initialFieldDecoration = record.fieldDecoration || FIELD_DECORATIONS[0]
@@ -1251,12 +1252,7 @@ export function PlayDesigner({ record, onClose, api = defaultApi, readOnly = fal
           readOnly={readOnly || Boolean(activeSlideId)}
         />
         <button type="button" className="play-designer-back" onClick={openSettings} disabled={readOnly} aria-label="Play settings">
-          <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M19.14 12.94a7.14 7.14 0 0 0 .06-.94 7.14 7.14 0 0 0-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.14 7.14 0 0 0-.06.94 7.14 7.14 0 0 0 .06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"
-            />
-          </svg>
+          <Settings size={18} aria-hidden="true" />
         </button>
         <button type="button" className="play-designer-cancel" onClick={handleCancel} disabled={saving || !isDirty}>
           Cancel
@@ -1897,6 +1893,10 @@ export function PlayDesigner({ record, onClose, api = defaultApi, readOnly = fal
               ...drawing.points.map((p) => ({ x: anchor.x + p.dx, y: anchor.y + p.dy })),
             ]
             const renderedPoints = tool.id === 'motion' ? motionPathPoints(points, fieldPxSize) : points
+            const playerStart = drawing.anchorId && !drawing.blockId && !drawing.motionId && !drawing.origin
+              ? fixedSizeEllipse(anchor, fieldPxSize, 14)
+              : null
+            const maskId = `${drawingMaskId}-${drawing.id}`
             const isSelected = selectedDrawing?.type === drawing.type && selectedDrawing?.id === drawing.id
             const color = drawing.color || toolColor(tool)
             const cap = tool.endCap === 'tbar' ? tbarCap(points) : null
@@ -1905,7 +1905,15 @@ export function PlayDesigner({ record, onClose, api = defaultApi, readOnly = fal
               ? fixedSizeEllipse(points.at(-1), fieldPxSize, MOTION_CAP_RADIUS_PX)
               : null
             return (
-              <g key={drawing.id} className={isSelected ? 'play-designer-drawing selected' : 'play-designer-drawing'}>
+              <g key={drawing.id} className={isSelected ? 'play-designer-drawing selected' : 'play-designer-drawing'} mask={playerStart ? `url(#${maskId})` : undefined}>
+                {playerStart && (
+                  <defs>
+                    <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100" style={{ maskType: 'luminance' }}>
+                      <rect width="100" height="100" fill="white" />
+                      <ellipse {...playerStart} fill="black" />
+                    </mask>
+                  </defs>
+                )}
                 {isSelected && (
                   <g className="play-designer-selection-halo">
                     <path d={pathData(renderedPoints)} />
@@ -1988,13 +1996,25 @@ export function PlayDesigner({ record, onClose, api = defaultApi, readOnly = fal
             ]
             if (cursorPos) points.push(cursorPos)
             const renderedPoints = tool.id === 'motion' ? motionPathPoints(points, fieldPxSize) : points
+            const playerStart = activeChain.anchorId && !activeChain.blockId && !activeChain.motionId && !activeChain.origin
+              ? fixedSizeEllipse(chainAnchor, fieldPxSize, 14)
+              : null
+            const maskId = `${drawingMaskId}-preview`
             const cap = tool.endCap === 'tbar' ? tbarCap(points) : null
             const arrow = tool.arrow ? arrowCap(points) : null
             const motionCap = tool.id === 'motion' && points.length > 1
               ? fixedSizeEllipse(points.at(-1), fieldPxSize, MOTION_CAP_RADIUS_PX)
               : null
             return (
-              <g>
+              <g mask={playerStart ? `url(#${maskId})` : undefined}>
+                {playerStart && (
+                  <defs>
+                    <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100" style={{ maskType: 'luminance' }}>
+                      <rect width="100" height="100" fill="white" />
+                      <ellipse {...playerStart} fill="black" />
+                    </mask>
+                  </defs>
+                )}
                 <path
                   d={pathData(tool.id === 'blitz' ? renderedPoints.slice(0, 2) : renderedPoints)}
                   stroke={toolColor(tool)}

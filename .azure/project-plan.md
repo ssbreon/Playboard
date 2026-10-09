@@ -1,4 +1,4 @@
-# Coaches Playboard for Defense
+# Blitzboard Studio
 
 **Status**: Integrated
 **Created**: 2026-09-24
@@ -6,7 +6,7 @@
 
 ## 1. Product Summary
 
-**Product**: Coaches Playboard for Defense
+**Product**: Blitzboard Studio
 
 **Goal**: Deliver a responsive defensive football playbook editor where coordinators can design, adjust, annotate, organize, search, and export plays and playbooks.
 
@@ -18,7 +18,7 @@
 
 ## 2. Services
 
-### Playboard web app
+### Blitzboard Studio web app
 
 - **Type**: Frontend
 - **Runtime**: Existing React 19 + Vite application
@@ -58,7 +58,7 @@ Authentication uses an external OIDC provider, with Microsoft Entra External ID 
 
 ## 5. Implementation Phases
 
-1. Replace the starter screen with the responsive playboard shell, field presets, toolbars, play library foundation, and accessible interaction states.
+1. Replace the starter screen with the responsive editor shell, field presets, toolbars, play library foundation, and accessible interaction states.
 2. Implement normalized play/slide data and SVG editing interactions for players, routes, zones, blitzes, man indicators, alignments, responsibilities, annotations, selection, deletion, clear, and undo/redo.
 3. Add API service boundaries and Azure Functions routes for authentication-aware playbook CRUD, membership/role checks, revisions, search metadata, and export jobs.
 4. Add Table Storage and Blob Storage adapters compatible with Azurite, environment configuration, and migration/seed data for representative defensive plays.

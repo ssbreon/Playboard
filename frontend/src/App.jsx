@@ -23,7 +23,7 @@ const GRID_COLUMNS = [
   { key: 'updatedAt', header: 'Date Modified', render: formatDate },
 ]
 
-const PLAYBOOK_GRID_COLUMNS = [GRID_COLUMNS[0], { key: 'year', header: 'Year' }, ...GRID_COLUMNS.slice(1)]
+const PLAYBOOK_GRID_COLUMNS = [GRID_COLUMNS[0], { key: 'year', header: 'Year' }, ...GRID_COLUMNS.slice(1), { key: 'ownerName', header: 'Owner' }]
 function formatGameDate(value) {
   return value ? new Date(`${value}T00:00:00`).toLocaleDateString() : '—'
 }
@@ -34,6 +34,7 @@ const GAME_PLAN_GRID_COLUMNS = [
   { key: 'opponent', header: 'Opponent' },
   { key: 'gameDate', header: 'Game Date', render: formatGameDate },
   ...GRID_COLUMNS.slice(1),
+  { key: 'ownerName', header: 'Owner' },
 ]
 
 const PLAY_GRID_COLUMNS = [
@@ -42,6 +43,7 @@ const PLAY_GRID_COLUMNS = [
   { key: 'createdAt', header: 'Created', render: formatDate },
   { key: 'updatedAt', header: 'Date Modified', render: formatDate },
   { key: 'theme', header: 'Theme', render: (value) => themeLabel(value) },
+  { key: 'ownerName', header: 'Owner' },
 ]
 
 function timezoneColumns(columns, timezone) {
@@ -154,7 +156,7 @@ function AppBar({ activeView, onNavigate, user, workspace, onWorkspaceChange, on
   )
 }
 
-function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, updateParent, title, rowIcon, rowType, fetchRows, onBack, onNew, newLabel, onOpenPlay, onPrintAll, rowActions, onGuardChange, readOnly, timezone }) {
+function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, updateParent, title, rowIcon, rowType, fetchRows, onReorder, onBack, onNew, newLabel, onOpenPlay, onPrintAll, rowActions, onGuardChange, readOnly, timezone }) {
   const [name, setName] = useState(parentRecord.name)
   const [savedName, setSavedName] = useState(parentRecord.name)
   const [category, setCategory] = useState(parentRecord.category || 'Defense')
@@ -329,6 +331,8 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
         rowType={rowType}
         categoryOptions={PLAY_CATEGORIES}
         fetchRows={fetchRows}
+        showPage
+        onReorder={readOnly ? undefined : onReorder}
         onNew={onNew}
         newLabel={newLabel}
         menuItems={[{ label: `Print ${parentLabel}...`, icon: Printer, onClick: onPrintAll }]}
@@ -602,6 +606,7 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
           rowIcon={Route}
           rowType="Play"
           fetchRows={({ namePrefix }) => api.listPlays(parent.id, undefined, namePrefix).then((result) => result.items)}
+          onReorder={(ids) => api.reorderPlays(parent.id, ids)}
           onNew={writable ? () => setNewDialog({ target: 'play', parentId: parent.id }) : undefined}
           newLabel="New Play"
           onBack={() => requestLeave(() => setParent(null), 'Leave playbook')}
@@ -623,6 +628,7 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
           rowIcon={ScanSearch}
           rowType="Scout Play"
           fetchRows={({ namePrefix }) => api.listScoutPlays(parent.id, undefined, namePrefix).then((result) => result.items)}
+          onReorder={(ids) => api.reorderScoutPlays(parent.id, ids)}
           onNew={writable ? () => setNewDialog({ target: 'scoutPlay', parentId: parent.id }) : undefined}
           newLabel="New Scout Play"
           onBack={() => requestLeave(() => setParent(null), 'Leave game plan')}

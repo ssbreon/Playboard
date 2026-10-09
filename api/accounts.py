@@ -404,7 +404,8 @@ def account_route(storage, identity, workspace, role, path, method, payload):
         for member in storage.list("memberships"):
             if member["workspaceId"] == workspace["id"]:
                 member_profile = storage.get("profiles", member["userId"]) or {}
-                members.append({"userId": member["userId"], "name": member_profile.get("name", "Coach"), "role": member["role"]})
+                members.append({"userId": member["userId"], "name": member_profile.get("name", "Coach"),
+                                "coachingTitle": member_profile.get("coachingTitle", ""), "role": member["role"]})
         return {"items": members}, 200
     if len(path) == 3 and path[:2] == ["workspace", "members"]:
         require_write(workspace, role, "team")

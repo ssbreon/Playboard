@@ -239,8 +239,8 @@ export function AccountViews({ view, user, workspace, api, onUserUpdated, onWork
       <div id="account-team-panel-staff" className={`account-team-panel${teamTab === 'staff' ? ' active' : ''}`} role="tabpanel" aria-labelledby="account-team-tab-staff" aria-hidden={teamTab !== 'staff'} inert={teamTab !== 'staff'} tabIndex={teamTab === 'staff' ? 0 : -1}>
         <section className="account-section" aria-label="Team staff">
           <p className="account-team-summary">{workspace.seatsUsed} / {workspace.seatLimit} seats reserved or active</p>
-          {!loading && <div className="account-table-wrap"><table className="account-table data-grid-table"><thead><tr><th className="data-grid-type-header" scope="col" aria-label="Type" /><th>Name</th><th>Role</th><th><span className="sr-only">Actions</span></th></tr></thead>
-            <tbody>{members.map((member) => <tr key={member.userId}><td className="data-grid-type-cell" aria-label="Staff member" title="Staff member"><UserRound size={17} strokeWidth={2} aria-hidden="true" /></td><td>{member.name}</td><td>
+          {!loading && <div className="account-table-wrap"><table className="account-table data-grid-table"><thead><tr><th className="data-grid-type-header" scope="col" aria-label="Type" /><th>Name</th><th>Title</th><th>Role</th><th><span className="sr-only">Actions</span></th></tr></thead>
+            <tbody>{members.map((member) => <tr key={member.userId}><td className="data-grid-type-cell" aria-label="Staff member" title="Staff member"><UserRound size={17} strokeWidth={2} aria-hidden="true" /></td><td>{member.name}</td><td>{member.coachingTitle || ''}</td><td>
               {teamEditable && member.role !== 'owner' ? <select aria-label={`Role for ${member.name}`} value={member.role} disabled={saving} onChange={(event) => memberAction(member, 'role', event.target.value)}>
                 <option value="coach">Coach</option><option value="admin">Admin</option>
               </select> : <span className="account-role">{member.role}</span>}
