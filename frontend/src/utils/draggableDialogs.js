@@ -1,4 +1,4 @@
-const HANDLE_SELECTOR = '.dialog-panel > h2'
+const HANDLE_SELECTOR = '.dialog-panel > h2, .print-dialog-header'
 
 function getOffset(panel) {
   return { x: Number(panel.dataset.dragX) || 0, y: Number(panel.dataset.dragY) || 0 }

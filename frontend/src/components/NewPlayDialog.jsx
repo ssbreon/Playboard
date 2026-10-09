@@ -3,14 +3,18 @@ import { PLAY_TEMPLATES } from '../utils/formations'
 import { DEFAULT_THEME_ID, PLAY_THEMES } from '../utils/themes'
 import { DEFAULT_FIELD_ZONE, FIELD_ZONES } from '../utils/playGeometry'
 
+export const OFFENSE_PLAY_CATEGORIES = ['Run', 'Pass', 'Play-Action Pass', 'RPO', 'Gadget', 'Generic']
 export const PLAY_CATEGORIES = ['Front', 'Stunt', 'Blitz', 'Coverage', 'Play Call']
+export function playCategoriesForCollection(category) {
+  return category === 'Offense' ? OFFENSE_PLAY_CATEGORIES : PLAY_CATEGORIES
+}
 export const FIELD_DECORATIONS = ['None', 'Hash Marks', 'Hash Marks and Numbers']
 export const FIELD_ORIENTATIONS = ['High School', 'NCAA', 'NFL']
 
-export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel, onCreate, defaultTheme = DEFAULT_THEME_ID, defaultFieldOrientation = FIELD_ORIENTATIONS[0] }) {
+export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel, onCreate, defaultTheme = DEFAULT_THEME_ID, defaultFieldOrientation = FIELD_ORIENTATIONS[0], categoryOptions = PLAY_CATEGORIES }) {
   const [name, setName] = useState('')
   const [templateId, setTemplateId] = useState(PLAY_TEMPLATES[0].id)
-  const [category, setCategory] = useState(PLAY_CATEGORIES[0])
+  const [category, setCategory] = useState(categoryOptions[0])
   const [fieldDecoration, setFieldDecoration] = useState(FIELD_DECORATIONS[0])
   const [fieldZone, setFieldZone] = useState(DEFAULT_FIELD_ZONE)
   const [fieldOrientation, setFieldOrientation] = useState(defaultFieldOrientation)
@@ -25,7 +29,7 @@ export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel
     onCreate(trimmed, templateId, themeId, category, fieldDecoration, fieldOrientation, fieldZone)
     setName('')
     setTemplateId(PLAY_TEMPLATES[0].id)
-    setCategory(PLAY_CATEGORIES[0])
+    setCategory(categoryOptions[0])
     setFieldDecoration(FIELD_DECORATIONS[0])
     setFieldZone(DEFAULT_FIELD_ZONE)
     setFieldOrientation(defaultFieldOrientation)
@@ -35,7 +39,7 @@ export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel
   function handleCancel() {
     setName('')
     setTemplateId(PLAY_TEMPLATES[0].id)
-    setCategory(PLAY_CATEGORIES[0])
+    setCategory(categoryOptions[0])
     setFieldDecoration(FIELD_DECORATIONS[0])
     setFieldZone(DEFAULT_FIELD_ZONE)
     setFieldOrientation(defaultFieldOrientation)
@@ -60,7 +64,7 @@ export function NewPlayDialog({ open, titleLabel, titleIcon: TitleIcon, onCancel
         <label className="dialog-field">
           <span>Category</span>
           <select value={category} onChange={(event) => setCategory(event.target.value)}>
-            {PLAY_CATEGORIES.map((option) => (
+            {categoryOptions.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>

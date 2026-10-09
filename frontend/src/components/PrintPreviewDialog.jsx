@@ -19,6 +19,8 @@ const ORIENTATIONS = [
 ]
 
 const PLAYS_PER_PAGE = [1, 2, 4]
+const DESIGNER_MARKER_SIZE = 28
+const PRINT_MARKER_SIZES = { 1: 17, 2: 13, 4: 10 }
 
 function sheetPixels(pageSize, orientation) {
   const width = (pageSize.width - PAGE_MARGIN_IN * 2) * DPI
@@ -39,7 +41,7 @@ function gridColumns(perPage, orientation) {
   return 2
 }
 
-export function PrintPreviewDialog({ play, plays, collection, onClose }) {
+export function PrintPreviewDialog({ play, plays, collection, onClose, fieldAspectRatio = 2.25 }) {
   const items = play ? [play] : plays || []
   const [pageSizeId, setPageSizeId] = useState(PAGE_SIZES[0].id)
   const [orientation, setOrientation] = useState('landscape')
@@ -52,6 +54,7 @@ export function PrintPreviewDialog({ play, plays, collection, onClose }) {
   const pageSize = PAGE_SIZES.find((size) => size.id === pageSizeId) || PAGE_SIZES[0]
   const sheet = sheetPixels(pageSize, orientation)
   const columns = gridColumns(perPage, orientation)
+  const drawingSizeScale = PRINT_MARKER_SIZES[perPage] / DESIGNER_MARKER_SIZE
   const playPages = chunk(items, perPage)
 
   useEffect(() => {
@@ -176,11 +179,12 @@ export function PrintPreviewDialog({ play, plays, collection, onClose }) {
                     `plays-${index}`,
                     <div className={`print-grid per-page-${perPage}`} style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}>
                       {pagePlays.map((item) => (
-                        <div key={item.id || item.name} className="print-cell">
+                        <div key={item.id || item.name} className="print-cell" style={{ '--print-field-aspect-ratio': fieldAspectRatio }}>
                           {showTitle && <h1 className="print-sheet-title">{item.name}</h1>}
                           <PlayFieldView
                             play={{ ...item, perspective: item.perspective || defaultPlayPerspective(collection?.category) }}
                             className="print-field"
+                            drawingSizeScale={drawingSizeScale}
                           />
                         </div>
                       ))}

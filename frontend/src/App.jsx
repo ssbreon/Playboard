@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
-import { BookOpen, Check, ClipboardList, Copy, CreditCard, FolderOpen, LoaderCircle, LogOut, Printer, Route, Save, ScanSearch, Settings, Trash2, UserRound, Users } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Archive, ArchiveRestore, BookOpen, Check, ChevronRight, ClipboardList, Copy, CreditCard, FolderOpen, LoaderCircle, LogOut, Printer, Route, Save, ScanSearch, Settings, Trash2, UserRound, Users } from 'lucide-react'
 import { api } from './api'
 import { createApi, isDevelopmentAuth, isSignedOut, signIn, signOut } from './api/client'
 import { AccountViews } from './components/AccountViews'
 import { renderCategoryBadge } from './components/CategoryBadge'
 import { DataGrid } from './components/DataGrid'
 import { COLLECTION_CATEGORIES, NewCollectionDialog } from './components/NewCollectionDialog'
-import { NewPlayDialog, PLAY_CATEGORIES } from './components/NewPlayDialog'
+import { NewPlayDialog, playCategoriesForCollection } from './components/NewPlayDialog'
 import { PlayDesigner } from './components/PlayDesigner'
 import { PrintPreviewDialog } from './components/PrintPreviewDialog'
 import { buildMarkersFromTemplate, PLAY_TEMPLATES } from './utils/formations'
@@ -14,6 +15,8 @@ import { formatDate } from './utils/formatDate'
 import { themeLabel } from './utils/themes'
 import { defaultPlayPerspective } from './utils/playGeometry'
 import './App.css'
+
+const STATUS_COLUMN = { key: 'recordStatus', header: 'Status', render: (value) => value ?? 'Active' }
 
 const GRID_COLUMNS = [
   { key: 'name', header: 'Name' },
@@ -23,7 +26,7 @@ const GRID_COLUMNS = [
   { key: 'updatedAt', header: 'Date Modified', render: formatDate },
 ]
 
-const PLAYBOOK_GRID_COLUMNS = [GRID_COLUMNS[0], { key: 'year', header: 'Year' }, ...GRID_COLUMNS.slice(1), { key: 'ownerName', header: 'Owner' }]
+const PLAYBOOK_GRID_COLUMNS = [GRID_COLUMNS[0], { key: 'year', header: 'Year' }, ...GRID_COLUMNS.slice(1), { key: 'ownerName', header: 'Owner' }, STATUS_COLUMN]
 function formatGameDate(value) {
   return value ? new Date(`${value}T00:00:00`).toLocaleDateString() : '—'
 }
@@ -35,6 +38,7 @@ const GAME_PLAN_GRID_COLUMNS = [
   { key: 'gameDate', header: 'Game Date', render: formatGameDate },
   ...GRID_COLUMNS.slice(1),
   { key: 'ownerName', header: 'Owner' },
+  STATUS_COLUMN,
 ]
 
 const PLAY_GRID_COLUMNS = [
@@ -44,6 +48,7 @@ const PLAY_GRID_COLUMNS = [
   { key: 'updatedAt', header: 'Date Modified', render: formatDate },
   { key: 'theme', header: 'Theme', render: (value) => themeLabel(value) },
   { key: 'ownerName', header: 'Owner' },
+  STATUS_COLUMN,
 ]
 
 function timezoneColumns(columns, timezone) {
@@ -156,80 +161,56 @@ function AppBar({ activeView, onNavigate, user, workspace, onWorkspaceChange, on
   )
 }
 
-function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, updateParent, title, rowIcon, rowType, fetchRows, onReorder, onBack, onNew, newLabel, onOpenPlay, onPrintAll, rowActions, onGuardChange, readOnly, timezone }) {
+function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, updateParent, title, rowIcon, rowType, fetchRows, reloadToken, busy, onReorder, onNew, newLabel, onOpenPlay, onPrintAll, rowActions, onGuardChange, readOnly, timezone, breadcrumbActionsTarget }) {
   const [name, setName] = useState(parentRecord.name)
-  const [savedName, setSavedName] = useState(parentRecord.name)
   const [category, setCategory] = useState(parentRecord.category || 'Defense')
-  const [savedCategory, setSavedCategory] = useState(parentRecord.category || 'Defense')
   const [year, setYear] = useState(String(parentRecord.year || new Date().getFullYear()))
-  const [savedYear, setSavedYear] = useState(String(parentRecord.year || new Date().getFullYear()))
   const [opponent, setOpponent] = useState(parentRecord.opponent || '')
-  const [savedOpponent, setSavedOpponent] = useState(parentRecord.opponent || '')
   const [gameDate, setGameDate] = useState(parentRecord.gameDate || '')
-  const [savedGameDate, setSavedGameDate] = useState(parentRecord.gameDate || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [draftName, setDraftName] = useState(name)
   const [draftCategory, setDraftCategory] = useState(category)
   const [draftYear, setDraftYear] = useState(year)
   const [draftOpponent, setDraftOpponent] = useState(opponent)
   const [draftGameDate, setDraftGameDate] = useState(gameDate)
-  const trimmedName = name.trim()
-  const metadataIsDirty = category !== savedCategory || year !== savedYear || (parentRecord.kind === 'gamePlan' && (opponent !== savedOpponent || gameDate !== savedGameDate))
-  const isDirty = name !== savedName || metadataIsDirty
-
-  async function handleSave() {
-    if (!trimmedName || !isDirty || readOnly) return false
+  async function handleSettingsSave(event) {
+    event.preventDefault()
+    if (!draftName.trim() || readOnly || saving || busy) return
     setSaving(true)
     setError(null)
     try {
-      const payload = { name: trimmedName }
-      if (metadataIsDirty) {
-        payload.category = category
-        payload.year = Number(year)
-        if (parentRecord.kind === 'gamePlan') {
-          payload.opponent = opponent
-          payload.gameDate = gameDate
-        }
+      const payload = { name: draftName.trim(), category: draftCategory, year: Number(draftYear) }
+      if (parentRecord.kind === 'gamePlan') {
+        payload.opponent = draftOpponent.trim()
+        payload.gameDate = draftGameDate
       }
       const updated = await updateParent(parentRecord.id, payload)
       setName(updated.name)
-      setSavedName(updated.name)
-      setSavedCategory(category)
-      setSavedYear(String(updated.year ?? year))
-      setYear(String(updated.year ?? year))
+      setCategory(updated.category ?? draftCategory)
+      setYear(String(updated.year ?? draftYear))
       if (parentRecord.kind === 'gamePlan') {
-        setSavedOpponent(opponent)
-        setOpponent(opponent)
-        const updatedGameDate = updated.gameDate ?? gameDate
-        setSavedGameDate(updatedGameDate)
-        setGameDate(updatedGameDate)
+        setOpponent(updated.opponent ?? payload.opponent)
+        setGameDate(updated.gameDate ?? draftGameDate)
       }
       onParentUpdated(updated)
-      return true
+      setSettingsOpen(false)
     } catch (err) {
       setError(err.message)
-      return false
     } finally {
       setSaving(false)
     }
   }
 
   useEffect(() => {
-    onGuardChange({ dirty: isDirty || settingsOpen, saving, canSave: !settingsOpen, save: handleSave })
+    onGuardChange({ dirty: settingsOpen, saving, canSave: false })
     return () => onGuardChange(null)
   })
 
-  function handleCancel() {
-    setName(savedName)
-    setCategory(savedCategory)
-    setYear(savedYear)
-    setOpponent(savedOpponent)
-    setGameDate(savedGameDate)
-    setError(null)
-  }
-
   function openSettings() {
+    setError(null)
+    setDraftName(name)
     setDraftCategory(category)
     setDraftYear(year)
     setDraftOpponent(opponent)
@@ -237,50 +218,22 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
     setSettingsOpen(true)
   }
 
-  function handleSettingsSave(event) {
-    event.preventDefault()
-    setCategory(draftCategory)
-    setYear(draftYear)
-    if (parentRecord.kind === 'gamePlan') {
-      setOpponent(draftOpponent.trim())
-      setGameDate(draftGameDate)
-    }
-    setError(null)
-    setSettingsOpen(false)
-  }
-
   return (
     <main className="plays-drillthrough-view">
-      <section className="collection-details" aria-label={`${parentLabel} details`}>
-        <div className="play-designer-header">
-          <button type="button" className="play-designer-back" onClick={onBack} aria-label={`Back to ${parentLabel}s`}>
-            <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-              <path fill="currentColor" d="M15 4 7 12l8 8 1.4-1.4L9.8 12l6.6-6.6z" />
-            </svg>
-          </button>
-          <input
-            className="play-designer-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            aria-label={`${parentLabel} name`}
-            readOnly={readOnly}
-          />
-          <button type="button" className="play-designer-back" onClick={openSettings} disabled={readOnly} aria-label={`${parentLabel} settings`}>
+      {breadcrumbActionsTarget && createPortal(<>
+          <button type="button" className="breadcrumb-settings" onClick={openSettings} disabled={readOnly || saving || busy} title={`Edit ${parentLabel} Settings`}>
             <Settings size={18} aria-hidden="true" />
+            <span>Edit {parentLabel} Settings</span>
           </button>
-          <button type="button" className="play-designer-cancel" onClick={handleCancel} disabled={saving || !isDirty}>
-            Cancel
-          </button>
-          <button type="button" className="play-designer-save" onClick={handleSave} disabled={readOnly || saving || !isDirty || !trimmedName}>
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
-        {error && <p className="data-grid-status data-grid-error">Unable to save: {error}</p>}
-      </section>
+      </>, breadcrumbActionsTarget)}
       {settingsOpen && (
-        <div className="dialog-overlay" onClick={() => setSettingsOpen(false)}>
-          <form className="dialog-panel" onClick={(event) => event.stopPropagation()} onSubmit={handleSettingsSave}>
+        <div className="dialog-overlay" onClick={() => { if (!saving) setSettingsOpen(false) }}>
+          <form className="dialog-panel" aria-busy={saving} onClick={(event) => event.stopPropagation()} onSubmit={handleSettingsSave}>
             <h2><Settings size={26} strokeWidth={1.8} aria-hidden="true" />{parentLabel} Settings</h2>
+            <label className="dialog-field">
+              <span>{parentLabel} name</span>
+              <input type="text" value={draftName} onChange={(event) => setDraftName(event.target.value)} required />
+            </label>
             <label className="dialog-field">
               <span>Category</span>
               <select value={draftCategory} onChange={(event) => setDraftCategory(event.target.value)}>
@@ -313,12 +266,13 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
                 </label>
               </>
             )}
+            {error && <p className="data-grid-status data-grid-error" role="alert">Unable to save: {error}</p>}
             <div className="dialog-actions">
-              <button type="button" className="dialog-cancel" onClick={() => setSettingsOpen(false)}>
+              <button type="button" className="dialog-cancel" disabled={saving} onClick={() => setSettingsOpen(false)}>
                 Cancel
               </button>
-              <button type="submit" className="dialog-create">
-                OK
+              <button type="submit" className="dialog-create" disabled={readOnly || saving || busy || !draftName.trim()}>
+                {saving ? 'Saving...' : 'OK'}
               </button>
             </div>
           </form>
@@ -329,7 +283,10 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
         columns={timezoneColumns(PLAY_GRID_COLUMNS, timezone)}
         rowIcon={rowIcon}
         rowType={rowType}
-        categoryOptions={PLAY_CATEGORIES}
+        categoryOptions={playCategoriesForCollection(parentRecord.category)}
+        statusFilter
+        reloadToken={reloadToken}
+        busy={busy}
         fetchRows={fetchRows}
         showPage
         onReorder={readOnly ? undefined : onReorder}
@@ -344,6 +301,7 @@ function PlaysDrillthroughView({ parentRecord, parentLabel, onParentUpdated, upd
 }
 
 function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdated, onWorkspaceUpdated, onGuardChange, onSignOut, requestLeave, busy, switchingSubscription }) {
+  const [breadcrumbActionsTarget, setBreadcrumbActionsTarget] = useState(null)
   const [view, setView] = useState('playbooks')
   const [accountDialog, setAccountDialog] = useState(null)
   const [parent, setParent] = useState(null)
@@ -356,11 +314,16 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
   const [gamePlansReloadToken, setGamePlansReloadToken] = useState(0)
   const [playsReloadToken, setPlaysReloadToken] = useState(0)
   const [scoutPlaysReloadToken, setScoutPlaysReloadToken] = useState(0)
+  const [statusSaving, setStatusSaving] = useState(false)
+  const [statusError, setStatusError] = useState(null)
 
   const writable = workspace.capabilities.edit
   const defaults = { ...workspace.defaults, ...authUser.preferences }
   const fetchPlaybooks = useCallback(({ namePrefix }) => api.listPlaybooks(undefined, namePrefix).then((result) => result.items), [api])
   const fetchGamePlans = useCallback(({ namePrefix }) => api.listGamePlans(undefined, namePrefix).then((result) => result.items), [api])
+  const parentId = parent?.id
+  const fetchPlays = useCallback(({ namePrefix }) => api.listPlays(parentId, undefined, namePrefix).then((result) => result.items), [api, parentId])
+  const fetchScoutPlays = useCallback(({ namePrefix }) => api.listScoutPlays(parentId, undefined, namePrefix).then((result) => result.items), [api, parentId])
 
   async function handleCreateCollection(payload) {
     if (newCollection === 'playbook') {
@@ -405,11 +368,44 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
     setPrintCollection({ collection: { ...row, kind }, plays: result.items })
   }
 
+  async function handleRecordStatus(kind, row, parentId) {
+    const restoring = row.recordStatus === 'Archived'
+    if (!restoring && !window.confirm(`Archive "${row.name}"? It will be hidden from the default Active grid view. Its data will remain intact in the database and can be restored later.`)) return
+    setStatusSaving(true)
+    setStatusError(null)
+    try {
+      const payload = { recordStatus: restoring ? 'Active' : 'Archived' }
+      if (kind === 'playbook') {
+        await api.updatePlaybook(row.id, payload)
+        setPlaybooksReloadToken((token) => token + 1)
+      } else if (kind === 'gamePlan') {
+        await api.updateGamePlan(row.id, payload)
+        setGamePlansReloadToken((token) => token + 1)
+      } else if (kind === 'play') {
+        await api.updatePlay(parentId, row.id, payload)
+        setPlaysReloadToken((token) => token + 1)
+      } else {
+        await api.updateScoutPlay(parentId, row.id, payload)
+        setScoutPlaysReloadToken((token) => token + 1)
+      }
+    } catch (error) {
+      setStatusError(`Unable to ${restoring ? 'restore' : 'archive'} "${row.name}": ${error.message}`)
+    } finally {
+      setStatusSaving(false)
+    }
+  }
+
+  function recordStatusAction(kind, row, parentId) {
+    const restoring = row.recordStatus === 'Archived'
+    return { key: restoring ? 'restore' : 'archive', label: restoring ? 'Restore' : 'Archive', icon: restoring ? ArchiveRestore : Archive, onClick: (item) => handleRecordStatus(kind, item, parentId) }
+  }
+
   function collectionRowActions(kind) {
-    return () => [
+    return (row) => [
       { key: 'open', label: 'Open', icon: FolderOpen, onClick: (item) => setParent({ ...item, kind }) },
       ...(writable ? [{ key: 'copy', label: 'Copy', icon: Copy, onClick: (item) => handleCopyCollection(kind, item) }] : []),
       { key: 'print', label: 'Print...', icon: Printer, onClick: (item) => handlePrintCollection(kind, item) },
+      ...(writable ? [recordStatusAction(kind, row)] : []),
       ...(workspace.capabilities.delete ? [{ key: 'delete', label: 'Delete', icon: Trash2, destructive: true, onClick: (item) => handleDeleteCollection(kind, item) }] : []),
     ]
   }
@@ -455,6 +451,7 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
       initialTheme: record.theme,
       template: record.template,
       category: record.category,
+      parentCategory: parent?.category,
       fieldDecoration: record.fieldDecoration,
       fieldOrientation: record.fieldOrientation,
       fieldZone: record.fieldZone,
@@ -476,6 +473,7 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
       initialTheme: row.theme,
       template: row.template,
       category: row.category,
+      parentCategory: parent?.category,
       fieldDecoration: row.fieldDecoration,
       fieldOrientation: row.fieldOrientation,
       fieldZone: row.fieldZone,
@@ -519,10 +517,11 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
   }
 
   function playRowActions(kind, parentId) {
-    return () => [
+    return (row) => [
       { key: 'open', label: 'Open', icon: FolderOpen, onClick: (r) => openDesignerForRow(kind, parentId, r) },
       ...(writable ? [{ key: 'copy', label: 'Copy', icon: Copy, onClick: (r) => handleCopyPlay(kind, parentId, r) }] : []),
       { key: 'print', label: 'Print...', icon: Printer, onClick: (r) => setPrintPlay({ ...r, perspective: r.perspective || defaultPlayPerspective(parent?.category) }) },
+      ...(writable ? [recordStatusAction(kind, row, parentId)] : []),
       ...(workspace.capabilities.delete ? [{ key: 'delete', label: 'Delete', icon: Trash2, destructive: true, onClick: (r) => handleDeletePlay(kind, parentId, r) }] : []),
     ]
   }
@@ -552,10 +551,48 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
         }, ['settings', 'profile', 'billing'].includes(nextView) ? `Open ${nextView}` : 'Leave this view')}
       />
 
+      <nav className="breadcrumb-bar" aria-label="Breadcrumb">
+        <ol>
+          <li>
+            {parent ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => requestLeave(() => {
+                  setDesigner(null)
+                  setParent(null)
+                  setView(parent.kind === 'playbook' ? 'playbooks' : 'gamePlans')
+                }, parent.kind === 'playbook' ? 'Leave playbook' : 'Leave game plan')}
+              >
+                {parent.kind === 'playbook' ? 'Playbooks' : 'Game Plans'}
+              </button>
+            ) : (
+              <span aria-current="page">{view === 'gamePlans' ? 'Game Plans' : 'Playbooks'}</span>
+            )}
+          </li>
+          {parent && <li>
+            <ChevronRight size={16} aria-hidden="true" />
+            {designer ? (
+              <button type="button" disabled={busy} onClick={() => requestLeave(() => setDesigner(null), 'Close play')}>
+                {parent.name}
+              </button>
+            ) : (
+              <span aria-current="page">{parent.name}</span>
+            )}
+          </li>}
+          {designer && <li>
+            <ChevronRight size={16} aria-hidden="true" />
+            <span aria-current="page">{designer.name}</span>
+          </li>}
+        </ol>
+        <div className="breadcrumb-actions" ref={setBreadcrumbActionsTarget} />
+      </nav>
+
       {!writable && <div className="workspace-read-only" role="status">{workspace.name}: read-only</div>}
+      {statusError && <p className="data-grid-status data-grid-error" role="alert">{statusError}</p>}
 
       <NewPlayDialog
-        key={`${workspace.id}:${defaults.theme}:${defaults.fieldOrientation}`}
+        key={`${workspace.id}:${parent?.category}:${defaults.theme}:${defaults.fieldOrientation}`}
         open={newDialog !== null}
         titleLabel={newDialog?.target === 'scoutPlay' ? 'New Scout Play' : 'New Play'}
         titleIcon={newDialog?.target === 'scoutPlay' ? ScanSearch : Route}
@@ -563,6 +600,7 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
         onCreate={handleCreatePlay}
         defaultTheme={defaults.theme}
         defaultFieldOrientation={defaults.fieldOrientation}
+        categoryOptions={playCategoriesForCollection(parent?.category)}
       />
       {newCollection && (
         <NewCollectionDialog
@@ -589,14 +627,18 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
           api={api}
           readOnly={!writable}
           canDelete={workspace.capabilities.delete}
+          breadcrumbActionsTarget={breadcrumbActionsTarget}
           onGuardChange={onGuardChange}
-          onClose={() => requestLeave(() => setDesigner(null), 'Close play')}
+          onNameSaved={(name) => setDesigner((current) => current ? { ...current, name } : current)}
         />
       ) : parent?.kind === 'playbook' ? (
         <PlaysDrillthroughView
-          key={`plays-${parent.id}-${playsReloadToken}`}
+          key={`plays-${parent.id}`}
+          reloadToken={playsReloadToken}
+          busy={statusSaving}
           parentRecord={parent}
           parentLabel="Playbook"
+          breadcrumbActionsTarget={breadcrumbActionsTarget}
           onParentUpdated={(updated) => setParent((current) => ({ ...current, ...updated, kind: 'playbook' }))}
           readOnly={!writable}
           timezone={authUser.preferences?.timezone}
@@ -605,20 +647,22 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
           title="Plays"
           rowIcon={Route}
           rowType="Play"
-          fetchRows={({ namePrefix }) => api.listPlays(parent.id, undefined, namePrefix).then((result) => result.items)}
+          fetchRows={fetchPlays}
           onReorder={(ids) => api.reorderPlays(parent.id, ids)}
           onNew={writable ? () => setNewDialog({ target: 'play', parentId: parent.id }) : undefined}
           newLabel="New Play"
-          onBack={() => requestLeave(() => setParent(null), 'Leave playbook')}
           onOpenPlay={(row) => requestLeave(() => openDesignerForRow('play', parent.id, row), 'Open play')}
           onPrintAll={() => handlePrintCollection('playbook', parent)}
           rowActions={playRowActions('play', parent.id)}
         />
       ) : parent?.kind === 'gamePlan' ? (
         <PlaysDrillthroughView
-          key={`scoutPlays-${parent.id}-${scoutPlaysReloadToken}`}
+          key={`scoutPlays-${parent.id}`}
+          reloadToken={scoutPlaysReloadToken}
+          busy={statusSaving}
           parentRecord={parent}
           parentLabel="Game Plan"
+          breadcrumbActionsTarget={breadcrumbActionsTarget}
           onParentUpdated={(updated) => setParent((current) => ({ ...current, ...updated, kind: 'gamePlan' }))}
           readOnly={!writable}
           timezone={authUser.preferences?.timezone}
@@ -627,11 +671,10 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
           title="Scout Plays"
           rowIcon={ScanSearch}
           rowType="Scout Play"
-          fetchRows={({ namePrefix }) => api.listScoutPlays(parent.id, undefined, namePrefix).then((result) => result.items)}
+          fetchRows={fetchScoutPlays}
           onReorder={(ids) => api.reorderScoutPlays(parent.id, ids)}
           onNew={writable ? () => setNewDialog({ target: 'scoutPlay', parentId: parent.id }) : undefined}
           newLabel="New Scout Play"
-          onBack={() => requestLeave(() => setParent(null), 'Leave game plan')}
           onOpenPlay={(row) => requestLeave(() => openDesignerForRow('scoutPlay', parent.id, row), 'Open scouting play')}
           onPrintAll={() => handlePrintCollection('gamePlan', parent)}
           rowActions={playRowActions('scoutPlay', parent.id)}
@@ -640,12 +683,15 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
         <>
       {view === 'playbooks' && (
         <DataGrid
-          key={`playbooks-${playbooksReloadToken}`}
+          key="playbooks"
+          reloadToken={playbooksReloadToken}
+          busy={statusSaving}
           title="Playbooks"
           columns={timezoneColumns(PLAYBOOK_GRID_COLUMNS, authUser.preferences?.timezone)}
           rowIcon={BookOpen}
           rowType="Playbook"
           categoryOptions={COLLECTION_CATEGORIES}
+          statusFilter
           fetchRows={fetchPlaybooks}
           onNew={writable && workspace.usage.playbooks < workspace.limits.playbooks ? () => setNewCollection('playbook') : undefined}
           newLabel="New Playbook"
@@ -656,12 +702,15 @@ function WorkspaceApp({ authUser, workspace, api, onWorkspaceChange, onUserUpdat
 
       {view === 'gamePlans' && (
         <DataGrid
-          key={`gamePlans-${gamePlansReloadToken}`}
+          key="gamePlans"
+          reloadToken={gamePlansReloadToken}
+          busy={statusSaving}
           title="Game Plans"
           columns={timezoneColumns(GAME_PLAN_GRID_COLUMNS, authUser.preferences?.timezone)}
           rowIcon={ClipboardList}
           rowType="Game Plan"
           categoryOptions={COLLECTION_CATEGORIES}
+          statusFilter
           fetchRows={fetchGamePlans}
           onNew={writable && workspace.usage.gamePlans < workspace.limits.gamePlans ? () => setNewCollection('gamePlan') : undefined}
           newLabel="New Game Plan"

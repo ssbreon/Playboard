@@ -1,0 +1,13 @@
+{
+  "version": 4,
+  "provider": "azure-cosmos-nosql",
+  "description": "Adds reversible archival to content records without deleting or moving data.",
+  "entityTypes": ["playbooks", "gamePlans", "plays", "scoutPlays"],
+  "field": "recordStatus",
+  "values": ["Active", "Archived"],
+  "default": "Active",
+  "legacyCompatibility": "Missing recordStatus is returned as Active. No bulk backfill is required; subsequent edits persist the default.",
+  "mutation": "Existing authenticated PATCH routes validate and persist recordStatus using normal edit permissions and ETag protection.",
+  "gridBehavior": "Active-only by default. Mutually exclusive Active/Archived choices appear in the toolbar dropdown's Status pane, beside its Actions pane; the Status column precedes row actions.",
+  "retention": "Archiving preserves descendants, page order, ownership, and quota usage. It does not cascade status changes. DELETE still permanently removes the record and its scoped descendants."
+}

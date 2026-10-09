@@ -13,7 +13,7 @@ export const PLAY_THEMES = [
     fieldClass: 'printer-friendly',
     strokeColor: '#000',
     // Distinguishes tool types by dash pattern instead of color when printing in black & white.
-    toolDash: { block: null, route: null, coverage: '1 4' },
+    toolDash: { block: null, route: null, coverage: '2 10' },
   },
   {
     id: 'blackboard',

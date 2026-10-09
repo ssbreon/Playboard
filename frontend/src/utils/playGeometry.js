@@ -157,7 +157,7 @@ export const DRAWING_TOOLS = [
   { id: 'dtb', label: 'DTB', color: '#f59e0b', dash: '2 4', arrow: false, endCap: 'tbar' },
   { id: 'route', label: 'Route', color: '#1d4ed8', dash: null, arrow: true },
   { id: 'blitz', label: 'Blitz', color: '#b91c1c', dash: null, arrow: true },
-  { id: 'coverage', label: 'Coverage', color: '#7c3aed', dash: '2 4', arrow: true },
+  { id: 'coverage', label: 'Coverage', color: '#7c3aed', dash: '2 10', arrow: true },
   { id: 'motion', label: 'Motion', color: '#374151', dash: null, arrow: false, endCap: 'motion' },
   { id: 'line', label: 'Line', color: '#ffffff', dash: null, arrow: false },
 ]
@@ -325,7 +325,7 @@ export function fixedSizeEllipse(point, fieldPxSize, radiusPx) {
 
 // Computes a perpendicular cap segment (in field percent coordinates) that renders as a
 // fixed-length, fixed-thickness line on screen regardless of the field's aspect ratio.
-export function tbarCapPoints(points, fieldPxSize) {
+export function tbarCapPoints(points, fieldPxSize, sizeScale = 1) {
   if (points.length < 2) return null
   const end = points[points.length - 1]
   const prev = points[points.length - 2]
@@ -335,8 +335,8 @@ export function tbarCapPoints(points, fieldPxSize) {
   const dyPx = (end.y - prev.y) * scaleY
   const len = Math.hypot(dxPx, dyPx)
   if (len === 0) return null
-  const perpXPx = (-dyPx / len) * (TBAR_LENGTH_PX / 2)
-  const perpYPx = (dxPx / len) * (TBAR_LENGTH_PX / 2)
+  const perpXPx = (-dyPx / len) * (TBAR_LENGTH_PX * sizeScale / 2)
+  const perpYPx = (dxPx / len) * (TBAR_LENGTH_PX * sizeScale / 2)
   return {
     x1: end.x + perpXPx / scaleX,
     y1: end.y + perpYPx / scaleY,
@@ -347,7 +347,7 @@ export function tbarCapPoints(points, fieldPxSize) {
 
 // Computes an arrowhead triangle (in field percent coordinates) that renders at a fixed
 // on-screen size regardless of the field's aspect ratio.
-export function arrowCapPoints(points, fieldPxSize) {
+export function arrowCapPoints(points, fieldPxSize, sizeScale = 1) {
   if (points.length < 2) return null
   const end = points[points.length - 1]
   const prev = points[points.length - 2]
@@ -361,10 +361,10 @@ export function arrowCapPoints(points, fieldPxSize) {
   if (len === 0) return null
   const dirX = dxPx / len
   const dirY = dyPx / len
-  const backX = endPx.x - dirX * ARROW_LENGTH_PX
-  const backY = endPx.y - dirY * ARROW_LENGTH_PX
-  const perpX = -dirY * (ARROW_WIDTH_PX / 2)
-  const perpY = dirX * (ARROW_WIDTH_PX / 2)
+  const backX = endPx.x - dirX * ARROW_LENGTH_PX * sizeScale
+  const backY = endPx.y - dirY * ARROW_LENGTH_PX * sizeScale
+  const perpX = -dirY * (ARROW_WIDTH_PX * sizeScale / 2)
+  const perpY = dirX * (ARROW_WIDTH_PX * sizeScale / 2)
   const toPercent = (px, py) => `${px / scaleX},${py / scaleY}`
   return [
     toPercent(endPx.x, endPx.y),

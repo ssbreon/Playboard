@@ -49,6 +49,81 @@ class AuthenticationTests(unittest.TestCase):
     def setUp(self):
         function_app.storage = function_app.Storage()
 
+    def test_content_limits_load_from_app_settings(self):
+        defaults = {"playbooks": 100, "gamePlans": 100, "plays": 5000, "scoutPlays": 5000}
+        self.assertEqual(function_app.accounts.load_limits({}), defaults)
+        self.assertEqual(function_app.accounts.load_limits({
+            "CONTENT_LIMIT_PLAYBOOKS": "12",
+            "CONTENT_LIMIT_GAME_PLANS": "34",
+            "CONTENT_LIMIT_PLAYS": "560",
+            "CONTENT_LIMIT_SCOUT_PLAYS": "780",
+        }), {"playbooks": 12, "gamePlans": 34, "plays": 560, "scoutPlays": 780})
+        self.assertEqual(function_app.accounts.load_limits({"CONTENT_LIMIT_PLAYBOOKS": "0"})["playbooks"], 0)
+        for invalid in ("many", "-1"):
+            with self.subTest(value=invalid), self.assertRaisesRegex(ValueError, "CONTENT_LIMIT_PLAYBOOKS"):
+                function_app.accounts.load_limits({"CONTENT_LIMIT_PLAYBOOKS": invalid})
+
+    def test_archive_restore_preserves_content_and_delete_is_permanent(self):
+        for collection_path, child_path in (("playbooks", "plays"), ("game-plans", "scout-plays")):
+            collection = response_json(call_api("POST", collection_path, "local-coach", {"name": "Collection"}))
+            children_path = f"{collection_path}/{collection['id']}/{child_path}"
+            child = response_json(call_api("POST", children_path, "local-coach", {"name": "Play", "markers": [{"id": "marker", "x": 20}]}))
+            for path, record in ((children_path, child), (collection_path, collection)):
+                with self.subTest(path=path):
+                    item_path = f"{path}/{record['id']}"
+                    self.assertEqual(record["recordStatus"], "Active")
+                    for status in ("Archived", "Active", "Archived"):
+                        updated = call_api("PATCH", item_path, "local-coach", {"recordStatus": status})
+                        self.assertEqual(updated.status_code, 200)
+                        stored = response_json(call_api("GET", item_path, "local-coach"))
+                        self.assertEqual(stored["recordStatus"], status)
+                        for key in ("name", "ownerId", "createdAt", "parentId", "markers"):
+                            if key in record:
+                                self.assertEqual(stored[key], record[key])
+                        listed = response_json(call_api("GET", path, "local-coach"))["items"]
+                        self.assertEqual(next(item for item in listed if item["id"] == record["id"])["recordStatus"], status)
+                    self.assertEqual(call_api("DELETE", item_path, "local-coach").status_code, 204)
+                    self.assertEqual(call_api("GET", item_path, "local-coach").status_code, 404)
+
+    def test_record_status_defaults_legacy_records_and_rejects_invalid_values(self):
+        for path in ("playbooks", "game-plans"):
+            created = response_json(call_api("POST", path, "local-coach", {"name": "Legacy"}))
+            entity_type = "playbooks" if path == "playbooks" else "gamePlans"
+            function_app.storage.memory[entity_type][created["id"]].pop("recordStatus")
+            item_path = f"{path}/{created['id']}"
+            self.assertEqual(response_json(call_api("GET", item_path, "local-coach"))["recordStatus"], "Active")
+            self.assertEqual(response_json(call_api("GET", path, "local-coach"))["items"][0]["recordStatus"], "Active")
+            for invalid in (None, "Deleted", False, [], {}):
+                self.assertEqual(call_api("PATCH", item_path, "local-coach", {"recordStatus": invalid}).status_code, 400)
+                self.assertEqual(call_api("POST", path, "local-coach", {"name": "Invalid", "recordStatus": invalid}).status_code, 400)
+            self.assertEqual(response_json(call_api("GET", item_path, "local-coach"))["recordStatus"], "Active")
+
+    def test_archiving_collection_preserves_descendants_and_usage(self):
+        book = response_json(call_api("POST", "playbooks", "local-coach", {"name": "Book"}))
+        children_path = f"playbooks/{book['id']}/plays"
+        play = response_json(call_api("POST", children_path, "local-coach", {"name": "Play"}))
+        slides_path = f"{children_path}/{play['id']}/slides"
+        slide = response_json(call_api("POST", slides_path, "local-coach", {"name": "Adjustment"}))
+        usage = response_json(call_api("GET", "workspace", "local-coach"))["usage"]
+        for path in (f"playbooks/{book['id']}", f"{children_path}/{play['id']}"):
+            self.assertEqual(call_api("PATCH", path, "local-coach", {"recordStatus": "Archived"}).status_code, 200)
+        self.assertEqual(response_json(call_api("GET", "workspace", "local-coach"))["usage"], usage)
+        self.assertEqual(call_api("GET", f"{slides_path}/{slide['id']}", "local-coach").status_code, 200)
+        self.assertEqual(call_api("DELETE", f"playbooks/{book['id']}", "local-coach").status_code, 204)
+        self.assertIsNone(function_app.storage.get("plays", play["id"]))
+        self.assertIsNone(function_app.storage.get("slides", slide["id"]))
+
+    def test_archive_restore_enforces_workspace_permissions(self):
+        team = self.team_fixture()
+        book = response_json(call_api("POST", "playbooks", "local-coach", {"name": "Team"}, team["id"]))
+        path = f"playbooks/{book['id']}"
+        self.assertEqual(call_api("PATCH", path, "coach-b", {"recordStatus": "Archived"}, team["id"]).status_code, 200)
+        self.assertEqual(call_api("PATCH", path, "outsider", {"recordStatus": "Active"}, team["id"]).status_code, 403)
+        workspace = function_app.storage.get("workspaces", team["id"])
+        workspace["subscription"]["periodEndsAt"] = (function_app.accounts.timestamp() - timedelta(seconds=1)).isoformat()
+        self.assertEqual(call_api("PATCH", path, "coach-b", {"recordStatus": "Active"}, team["id"]).status_code, 403)
+        self.assertEqual(response_json(call_api("GET", path, "local-coach", workspace_id=team["id"]))["recordStatus"], "Archived")
+
     def test_local_owner_has_independent_annual_workspaces(self):
         user = response_json(call_api("GET", "me", "local-coach"))
         self.assertEqual(len(user["workspaces"]), 2)

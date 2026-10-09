@@ -7,6 +7,12 @@ const CATEGORY_COLORS = {
   Blitz: { hue: 2, saturation: '70%' },
   Coverage: { hue: 215, saturation: '72%' },
   'Play Call': { hue: 220, saturation: '8%' },
+  Run: { hue: 142, saturation: '58%' },
+  Pass: { hue: 215, saturation: '72%' },
+  'Play-Action Pass': { hue: 185, saturation: '62%' },
+  RPO: { hue: 35, saturation: '78%' },
+  Gadget: { hue: 275, saturation: '62%' },
+  Generic: { hue: 220, saturation: '8%' },
 }
 
 export function getCategoryBadgeStyle(category) {

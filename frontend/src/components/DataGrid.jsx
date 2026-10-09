@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDown, ArrowUp, GripVertical, Info, MoreVertical, RefreshCw, Search, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowUp, Check, GripVertical, Info, LoaderCircle, MoreVertical, RefreshCw, Search, X } from 'lucide-react'
 import { getCategoryBadgeStyle } from './CategoryBadge'
 
 const PAGE_SIZE = 50
 
-export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, categoryOptions, fetchRows, onNew, newLabel = 'New', menuItems = [], rowActions, onRowDoubleClick, onBack, items, compact = false, busy = false, rowActionLabel, showPage = false, onReorder }) {
+export function DataGrid({ title, columns, rowIcon: RowIcon, rowType, categoryOptions, statusFilter = false, reloadToken = 0, fetchRows, onNew, newLabel = 'New', menuItems = [], rowActions, onRowDoubleClick, items, compact = false, busy = false, rowActionLabel, showPage = false, onReorder }) {
   const openHintStorageKey = `blitzboard:data-grid-open-hint:${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
   const [fetchedRows, setRows] = useState([])
   const rows = items ?? fetchedRows
@@ -14,6 +14,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
   const [error, setError] = useState(null)
   const [page, setPage] = useState(0)
   const [selectedCategories, setSelectedCategories] = useState([])
+  const [selectedStatus, setSelectedStatus] = useState('Active')
   const [searchName, setSearchName] = useState('')
   const [namePrefix, setNamePrefix] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
@@ -23,6 +24,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
   const [dragId, setDragId] = useState(null)
   const [dropTarget, setDropTarget] = useState(null)
   const [reordering, setReordering] = useState(false)
+  const [pendingPageIds, setPendingPageIds] = useState([])
   const [reorderError, setReorderError] = useState(null)
   const [showOpenHint, setShowOpenHint] = useState(() => {
     try {
@@ -67,7 +69,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
   useEffect(() => {
     if (openRowMenuId === null) return undefined
     const focusTarget = rowMenuRef.current?.querySelector('button:not(:disabled)') || rowMenuRef.current
-    focusTarget?.focus()
+    focusTarget?.focus({ preventScroll: true })
     window.addEventListener('scroll', closeRowMenu, true)
     window.addEventListener('resize', closeRowMenu)
     return () => {
@@ -100,19 +102,20 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
     return () => {
       cancelled = true
     }
-  }, [fetchRows, refreshToken, namePrefix, items])
+  }, [fetchRows, refreshToken, reloadToken, namePrefix, items])
 
   function toggleCategory(option) {
     setSelectedCategories((current) => current.includes(option) ? current.filter((c) => c !== option) : [...current, option])
     setPage(0)
   }
 
-  const filteredRows = selectedCategories.length ? rows.filter((row) => selectedCategories.includes(row.category)) : rows
+  const filteredRows = rows.filter((row) => (!selectedCategories.length || selectedCategories.includes(row.category))
+    && (!statusFilter || selectedStatus === (row.recordStatus ?? 'Active')))
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages - 1)
   const pageRows = filteredRows.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE)
   // Page order is only meaningful against the full, unfiltered list.
-  const canReorder = Boolean(onReorder) && items === undefined && !busy && !reordering && !selectedCategories.length && !namePrefix && !searchName
+  const canReorder = Boolean(onReorder) && items === undefined && !busy && !reordering && !selectedCategories.length && !namePrefix && !searchName && filteredRows.length === rows.length
   const leadingColumns = (showPage ? 1 : 0) + (RowIcon ? 1 : 0)
 
   async function moveRow(rowId, toIndex) {
@@ -123,6 +126,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
     const [moved] = next.splice(fromIndex, 1)
     next.splice(toIndex, 0, moved)
     setRows(next.map((row, index) => ({ ...row, page: index + 1 })))
+    setPendingPageIds(next.filter((row, index) => row.page !== index + 1).map((row) => row.id))
     setReordering(true)
     setReorderError(null)
     try {
@@ -131,6 +135,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
       setRows(previous)
       setReorderError(err.message)
     } finally {
+      setPendingPageIds([])
       setReordering(false)
     }
   }
@@ -161,22 +166,23 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
   }
 
   const dropdownItems = [{ label: 'Refresh', icon: RefreshCw, onClick: () => setRefreshToken((t) => t + 1) }, ...menuItems]
+  const dropdownActions = dropdownItems.map((item) => (
+    <button
+      key={item.label}
+      type="button"
+      role="menuitem"
+      onClick={() => {
+        item.onClick()
+        setMenuOpen(false)
+      }}
+    >
+      {item.icon && <item.icon className="menu-item-icon" aria-hidden="true" />}
+      <span className="data-grid-menu-action-label">{item.label}</span>
+    </button>
+  ))
 
   return (
-    <section className={`data-grid${compact ? ' data-grid-compact' : ''}`} aria-label={compact ? title : undefined}>
-      {!compact && <div className="data-grid-title-row">
-        {onBack && (
-          <button type="button" className="data-grid-back" onClick={onBack} aria-label="Back">
-            <svg viewBox="0 0 24 24" role="presentation" aria-hidden="true">
-              <path fill="currentColor" d="M15 4 7 12l8 8 1.4-1.4L9.8 12l6.6-6.6z" />
-            </svg>
-          </button>
-        )}
-        <div className="data-grid-heading">
-          <h1>{title}</h1>
-          {subtitle && <p className="data-grid-context">{subtitle}</p>}
-        </div>
-      </div>}
+    <section className={`data-grid${compact ? ' data-grid-compact' : ''}`} aria-label={title}>
       {!compact && <div className="data-grid-toolbar">
         <div className="data-grid-toolbar-actions">
           <button type="button" className="toolbar-new-button" onClick={onNew} disabled={!onNew}>
@@ -218,7 +224,13 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
             </div>
           )}
         </div>
-        <div className="toolbar-menu" ref={menuRef}>
+        <div className="toolbar-menu data-grid-toolbar-menu" ref={menuRef}>
+          {statusFilter && selectedStatus === 'Archived' && (
+            <span className="data-grid-archived-indicator" role="status" aria-label="Viewing archived records" title="Viewing archived records">
+              <Archive size={18} aria-hidden="true" />
+              <span>Viewing Archived</span>
+            </span>
+          )}
           <button
             type="button"
             className="hamburger-button"
@@ -232,21 +244,34 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
             </svg>
           </button>
           {menuOpen && (
-            <div className="toolbar-dropdown" role="menu">
-              {dropdownItems.map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    item.onClick()
-                    setMenuOpen(false)
-                  }}
-                >
-                  {item.icon && <item.icon className="menu-item-icon" aria-hidden="true" />}
-                  {item.label}
-                </button>
-              ))}
+            <div className={`toolbar-dropdown${statusFilter ? ' data-grid-toolbar-dropdown' : ''}`} role="menu">
+              {statusFilter ? (
+                <div className="data-grid-menu-panes">
+                  <div className="data-grid-status-filter" role="group" aria-label="Filter by status">
+                    <div className="account-menu-section-label">View</div>
+                    {['Active', 'Archived'].map((status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selectedStatus === status}
+                        onClick={() => {
+                          setSelectedStatus(status)
+                          setPage(0)
+                          setMenuOpen(false)
+                        }}
+                      >
+                        <Check size={16} className="data-grid-status-check" aria-hidden="true" />
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="data-grid-menu-actions" role="group" aria-label="Grid actions">
+                    <div className="account-menu-section-label">Actions</div>
+                    {dropdownActions}
+                  </div>
+                </div>
+              ) : dropdownActions}
             </div>
           )}
         </div>
@@ -282,7 +307,7 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                 {pageRows.length === 0 && (
                   <tr>
                     <td className="data-grid-empty" colSpan={columns.length + leadingColumns + (rowActions ? 1 : 0)}>
-                      {namePrefix ? `No ${title.toLowerCase()} match your search` : selectedCategories.length ? `No ${title.toLowerCase()} in ${selectedCategories.join(', ')}` : `No ${title.toLowerCase()} yet`}
+                      {namePrefix ? `No ${title.toLowerCase()} match your search` : statusFilter || selectedCategories.length ? `No ${title.toLowerCase()} match the selected filters` : `No ${title.toLowerCase()} yet`}
                     </td>
                   </tr>
                 )}
@@ -298,12 +323,6 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                       dragId === row.id && 'is-dragging',
                       dropTarget?.id === row.id && (dropTarget.after ? 'drop-after' : 'drop-before'),
                     ].filter(Boolean).join(' ') || undefined}
-                    draggable={canReorder || undefined}
-                    onDragStart={canReorder ? (event) => {
-                      event.dataTransfer.effectAllowed = 'move'
-                      event.dataTransfer.setData('text/plain', row.id)
-                      setDragId(row.id)
-                    } : undefined}
                     onDragOver={canReorder && dragId ? (event) => {
                       event.preventDefault()
                       event.dataTransfer.dropEffect = 'move'
@@ -318,8 +337,22 @@ export function DataGrid({ title, subtitle, columns, rowIcon: RowIcon, rowType, 
                     } : undefined}
                   >
                     {showPage && (
-                      <td className="data-grid-page-cell" title={canReorder ? 'Drag to reorder' : undefined}>
-                        {canReorder && <GripVertical className="data-grid-page-grip" size={14} aria-hidden="true" />}
+                      <td
+                        className="data-grid-page-cell"
+                        aria-busy={pendingPageIds.includes(row.id) || undefined}
+                        title={canReorder ? 'Drag to reorder' : undefined}
+                        draggable={canReorder || undefined}
+                        onDragStart={canReorder ? (event) => {
+                          event.dataTransfer.effectAllowed = 'move'
+                          event.dataTransfer.setData('text/plain', row.id)
+                          setDragId(row.id)
+                        } : undefined}
+                      >
+                        {pendingPageIds.includes(row.id) ? (
+                          <span role="status" aria-label={`Saving page ${row.page}`}>
+                            <LoaderCircle className="data-grid-page-grip data-grid-page-spinner" size={14} aria-hidden="true" />
+                          </span>
+                        ) : (canReorder || reordering) && <GripVertical className="data-grid-page-grip" size={14} aria-hidden="true" />}
                         {row.page}
                       </td>
                     )}

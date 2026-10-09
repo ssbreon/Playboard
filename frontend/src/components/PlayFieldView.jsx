@@ -32,7 +32,7 @@ import {
 } from '../utils/playGeometry'
 
 /** Read-only rendering of a play's field, markers, drawings and text. Used for print output. */
-export function PlayFieldView({ play, className = '' }) {
+export function PlayFieldView({ play, className = '', drawingSizeScale = 1 }) {
   const drawingMaskId = useId()
   const fieldRef = useRef(null)
   const [fieldPxSize, setFieldPxSize] = useState({ width: 100, height: 100, markerRadius: 14 })
@@ -74,6 +74,7 @@ export function PlayFieldView({ play, className = '' }) {
     <div
       ref={fieldRef}
       className={`play-designer-field play-field-view${themeClass}${fieldDecorationClass} zone-windowed ${className}`.trim()}
+      style={{ '--drawing-size-scale': drawingSizeScale }}
     >
       <span className="play-designer-los-line" style={{ top: `${losPercent}%` }} aria-hidden="true" />
       {endZoneBands.map((band) => (
@@ -156,8 +157,8 @@ export function PlayFieldView({ play, className = '' }) {
             ? fixedSizeEllipse(points[0], fieldPxSize, fieldPxSize.markerRadius)
             : null
           const maskId = `${drawingMaskId}-${drawing.id}`
-          const cap = tool.endCap === 'tbar' ? tbarCapPoints(points, fieldPxSize) : null
-          const arrow = tool.arrow ? arrowCapPoints(points, fieldPxSize) : null
+          const cap = tool.endCap === 'tbar' ? tbarCapPoints(points, fieldPxSize, drawingSizeScale) : null
+          const arrow = tool.arrow ? arrowCapPoints(points, fieldPxSize, drawingSizeScale) : null
           const motionCap = tool.id === 'motion' ? fixedSizeEllipse(points.at(-1), fieldPxSize, 3.5) : null
           return (
             <g key={drawing.id} mask={playerStart ? `url(#${maskId})` : undefined}>
@@ -170,7 +171,7 @@ export function PlayFieldView({ play, className = '' }) {
                 </defs>
               )}
               <path
-                className="play-designer-route"
+                className={`play-designer-route${tool.id === 'coverage' ? ' coverage' : ''}`}
                 d={pathData(tool.id === 'blitz' ? renderedPoints.slice(0, 2) : renderedPoints)}
                 stroke={color}
                 strokeDasharray={tool.id === 'blitz' ? BLITZ_FIRST_SEGMENT_DASH : toolDash(tool, theme, drawing) || undefined}
@@ -188,7 +189,7 @@ export function PlayFieldView({ play, className = '' }) {
                   x2={cap.x2}
                   y2={cap.y2}
                   stroke={color}
-                  strokeWidth={TBAR_THICKNESS_PX}
+                  strokeWidth={TBAR_THICKNESS_PX * drawingSizeScale}
                   vectorEffect="non-scaling-stroke"
                 />
               )}

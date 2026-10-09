@@ -25,8 +25,20 @@ DEV_AUTH_SECRET = os.getenv("DEV_AUTH_SECRET", "")
 DEV_USER_ID = os.getenv("DEV_USER_ID", "local-coach")
 DEV_USER_NAME = os.getenv("DEV_USER_NAME", "Local Coach")
 CONTENT_TYPES = ("playbooks", "plays", "slides", "exports", "gamePlans", "scoutPlays")
+STATUS_TYPES = {"playbooks", "gamePlans", "plays", "scoutPlays"}
 request_workspace = ContextVar("request_workspace", default=None)
 accounts.validate_environment(COSMOS_ENDPOINT)
+
+
+def with_record_status(entity_type, record):
+    if record is not None and entity_type in STATUS_TYPES:
+        return {"recordStatus": "Active", **record}
+    return record
+
+
+def validate_record_status(entity_type, payload):
+    if entity_type in STATUS_TYPES and "recordStatus" in payload and payload["recordStatus"] not in ("Active", "Archived"):
+        raise accounts.AccountError("VALIDATION_ERROR", "recordStatus must be Active or Archived")
 
 
 class Storage:
@@ -71,7 +83,7 @@ class Storage:
         else:
             records = list(self.memory[entity_type].values())
         workspace = self.get("workspaces", scope) if scope else None
-        return [record for record in records if (not parent_id or record.get("parentId") == parent_id)
+        return [with_record_status(entity_type, record) for record in records if (not parent_id or record.get("parentId") == parent_id)
                 and (category is None or record.get("category") == category)
                 and (not name_prefix or (record.get("name") or "").casefold().startswith(name_prefix.casefold()))
                 and (accounts.belongs(record, workspace) if workspace else (not scope and (not owner_id or record.get("ownerId") == owner_id)))]
@@ -79,10 +91,10 @@ class Storage:
     def get(self, entity_type, item_id):
         if self.container:
             try:
-                return self.container.read_item(item=item_id, partition_key=entity_type)
+                return with_record_status(entity_type, self.container.read_item(item=item_id, partition_key=entity_type))
             except ResourceNotFoundError:
                 return None
-        return self.memory[entity_type].get(item_id)
+        return with_record_status(entity_type, self.memory[entity_type].get(item_id))
 
     def save(self, entity_type, record):
         record["entityType"] = entity_type
@@ -279,7 +291,10 @@ def reorder_pages(entity_type, parent_id, payload):
 
 
 def create_record(entity_type, payload, owner_id, parent_id=None):
+    validate_record_status(entity_type, payload)
     payload = {key: value for key, value in payload.items() if key not in {"_etag", "_rid", "_self", "_ts", "_attachments"}}
+    if entity_type in STATUS_TYPES:
+        payload.setdefault("recordStatus", "Active")
     if entity_type in PAGED_TYPES:
         siblings = renumber_pages(entity_type, paged_siblings(entity_type, parent_id))
         payload["page"] = len(siblings) + 1
@@ -297,6 +312,7 @@ def create_record(entity_type, payload, owner_id, parent_id=None):
 
 
 def update_record(entity_type, item_id, payload):
+    validate_record_status(entity_type, payload)
     record = storage.get(entity_type, item_id)
     if record is None:
         return None

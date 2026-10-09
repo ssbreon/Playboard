@@ -40,6 +40,24 @@ Individual and Team each have separate limits: 100 playbooks, 100 game plans,
 5,000 plays across all playbooks, and 5,000 scouting plays across all game plans.
 The ten Team seats include the Owner and pending unexpired invitations.
 
+### Record Status
+
+Playbooks, Game Plans, Plays, and Scout Plays persist `recordStatus` as `Active`
+or `Archived`; existing records without the field are treated as Active.
+Each grid starts with Active selected. The toolbar menu's left pane is labeled View and contains
+mutually exclusive Active/Archived choices; its right pane is labeled Actions
+and contains grid commands. A Status column immediately before row actions displays the saved value.
+An archive icon and Archived label beside the toolbar menu identify the Archived view.
+Archive requires confirmation and hides the record from the default view.
+Archived rows offer Restore, which sets the status back to Active.
+
+Archive/Restore requires edit access. Archiving keeps all data, descendants,
+page positions, and quota usage intact; child statuses are unchanged.
+Delete remains permanent, including scoped descendants. Page reordering is
+available only when every row is visible; mixed Active/Archived libraries cannot
+be reordered while one status is hidden. The schema manifest is
+`api/migrations/004-record-status-schema.json`.
+
 ### Local Configuration
 
 Keep the existing development credentials in the ignored API local settings and
@@ -57,6 +75,14 @@ API values (in `api/local.settings.json` under `Values`):
 | `DEV_USER_EMAIL` | Optional controlled Gmail alias for acceptance tests |
 | `APP_PUBLIC_URL` | `http://localhost:5173`, matching the running frontend |
 | `DEV_AUTH_SECRET` | Existing local secret, matching the frontend |
+| `CONTENT_LIMIT_PLAYBOOKS` | `100` |
+| `CONTENT_LIMIT_GAME_PLANS` | `100` |
+| `CONTENT_LIMIT_PLAYS` | `5000` |
+| `CONTENT_LIMIT_SCOUT_PLAYS` | `5000` |
+
+Content limits are read by the API at startup. Set the corresponding Function App
+Settings in Azure to override them without rebuilding; omitted settings use the
+defaults shown above. Values must be non-negative integers.
 
 An explicitly development-authenticated, non-Azure local runtime defaults to mock
 billing if `BILLING_MODE` is omitted. Set it explicitly for clarity. The configured

@@ -11,9 +11,36 @@ from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 
-LIMITS = {"playbooks": 100, "gamePlans": 100, "plays": 5000, "scoutPlays": 5000}
+DEFAULT_LIMITS = {"playbooks": 100, "gamePlans": 100, "plays": 5000, "scoutPlays": 5000}
+LIMIT_SETTINGS = {
+    "playbooks": "CONTENT_LIMIT_PLAYBOOKS",
+    "gamePlans": "CONTENT_LIMIT_GAME_PLANS",
+    "plays": "CONTENT_LIMIT_PLAYS",
+    "scoutPlays": "CONTENT_LIMIT_SCOUT_PLAYS",
+}
 PRICES = {"individual": {"month": 999, "year": 9990}, "team": {"month": 2999, "year": 29990}}
 DEFAULT_PREFERENCES = {"theme": "color", "fieldOrientation": "High School", "timezone": "UTC"}
+
+
+def load_limits(environ=None):
+    environ = os.environ if environ is None else environ
+    limits = {}
+    for entity, setting in LIMIT_SETTINGS.items():
+        raw_value = environ.get(setting)
+        if raw_value is None:
+            limits[entity] = DEFAULT_LIMITS[entity]
+            continue
+        try:
+            limit = int(raw_value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{setting} must be a non-negative integer") from None
+        if limit < 0:
+            raise ValueError(f"{setting} must be a non-negative integer")
+        limits[entity] = limit
+    return limits
+
+
+LIMITS = load_limits()
 
 
 class AccountError(Exception):
